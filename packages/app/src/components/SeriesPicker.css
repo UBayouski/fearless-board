@@ -11,6 +11,10 @@
 .picker-controls select {
   padding: 0.3rem;
   font-size: 0.85rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
 }
 
 .series-list {
@@ -24,10 +28,11 @@
   cursor: pointer;
   border-radius: 4px;
   margin-bottom: 2px;
+  color: var(--text);
 }
 
 .series-list li:hover {
-  background: #f5f5f5;
+  background: var(--surface-2);
 }
 
 .series-list li.selected {
@@ -42,6 +47,6 @@
 
 .series-meta {
   font-size: 0.75rem;
-  color: #757575;
+  color: var(--muted);
   display: block;
 }

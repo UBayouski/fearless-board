@@ -1,57 +1,70 @@
+/* ── Font imports ───────────────────────────────────────────── */
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/600.css';
+
+/* ── Dark theme ─────────────────────────────────────────────── */
 :root {
-  font-family: system-ui, 'Segoe UI', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   line-height: 1.5;
-  color-scheme: light dark;
-  --color-blue-bg: #e3f2fd;
-  --color-red-bg: #fce4ec;
-  --color-tile: #e0e0e0;
-  --color-tile-burned: #cfd8dc;
-  --color-burned-text: #757575;
-  --color-selected: #bbdefb;
+  color-scheme: dark;
+
+  /* Colours */
+  --bg: #0d1014;
+  --surface: #151a21;
+  --surface-2: #1d242d;
+  --line: #2a323d;
+  --text: #e8ebf0;
+  --muted: #8a94a3;
+  --ember: #ff7a1a;
+  --hit: #3ddc97;
+  --new: #ffd166;
+  --blue-side: #5b9dff;
+  --red-side: #ff6b6b;
+
+  /* Legacy aliases (kept for component CSS that still references them) */
+  --color-blue-bg: rgba(91, 157, 255, 0.1);
+  --color-red-bg: rgba(255, 107, 107, 0.1);
+  --color-tile: var(--surface-2);
+  --color-tile-burned: var(--surface-2);
+  --color-burned-text: var(--ember);
+  --color-selected: rgba(91, 157, 255, 0.15);
 }
 
+/* ── Typography ─────────────────────────────────────────────── */
+.display,
+.team-name,
+.role-label,
+.big-number {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+}
+
+.role-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Tabular numbers everywhere */
+.tabular,
+td, th, .champ-tile small, .pool-cell-summary, .pool-cell-name {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Global reset ───────────────────────────────────────────── */
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
 }
 
 main {
   max-width: 100%;
   margin: 0;
   padding: 0;
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-}
-
-main > h1 {
-  padding: 0.5rem 1rem;
-  margin: 0;
-  font-size: 1.25rem;
-  border-bottom: 1px solid #ddd;
-  flex-shrink: 0;
-}
-
-/* ── Layout ─────────────────────────────────────────────────── */
-
-.app-layout {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-.sidebar {
-  width: 28rem;
-  min-width: 20rem;
-  border-right: 1px solid #ddd;
-  overflow-y: auto;
-  flex-shrink: 0;
-  padding: 0.5rem;
-}
-
-.board {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
 }
 
 /* ── Champion Tiles (shared across components) ──────────────── */
@@ -59,10 +72,11 @@ main > h1 {
 .champ-tile {
   display: inline-block;
   padding: 0.15rem 0.5rem;
-  background: var(--color-tile);
+  background: var(--surface-2);
   border-radius: 3px;
   font-size: 0.75rem;
   white-space: nowrap;
+  color: var(--text);
 }
 
 .champ-tile.banned {
@@ -71,9 +85,32 @@ main > h1 {
 }
 
 .champ-tile.burned {
-  background: var(--color-tile-burned);
-  color: var(--color-burned-text);
+  background: var(--surface-2);
+  color: var(--ember);
   text-decoration: line-through;
+  border-left: 2px solid var(--ember);
 }
 
-/* ── Unused rules removed; component CSS files handle the rest ─ */
+/* ── 6: Footer ──────────────────────────────────────────────── */
+
+.app-footer {
+  padding: 1rem 1.5rem;
+  margin-top: 2rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: center;
+  text-align: center;
+}
+
+.backtest-note {
+  font-style: italic;
+}
+
+.attribution {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}

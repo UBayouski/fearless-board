@@ -55,6 +55,21 @@ left edge and the game tag ("G1") in ember. The burned strip uses the same treat
   ember part is the burned share, with the percentage beside it. Tiles follow.
 - At widths under 900 px the two team columns stack; nothing scrolls sideways.
 
+## 3c. Corrections after review of sections 2 and 3
+
+- **The header gives away the result.** With game 3 selected it shows "3–2" and pips for all five games.
+  Planning mode must never show anything from game N or later. Show the score going into game N ("2–0"),
+  with pips filled only for games before N and hollow for the rest. Put each team's pips next to its name,
+  so it is clear whose they are.
+- **Burned tiles in the matrix lost their treatment.** "Rumble G1" now looks like an available champion.
+  Apply section 2: dim text, strike-through, a 2 px ember left edge and the game tag in ember. Keep burned
+  tiles on their own line, after the available ones.
+- **Text is too small for a recording.** Tile text is about 11 px. Use 14 px for champion names and 12 px
+  for the numbers; there is spare width in every cell. "14 left" should be the large number in the cell
+  (about 28 px, condensed face), with "5 burned" beside it in ember.
+- **Team names are still truncated** in the history cards and ban lines ("OKSavingsBank B…"). The cards have
+  room: show full names.
+
 ## 4. Tiles
 
 - Each available tile shows the champion name, games played, and a thin bar under the name whose length is
@@ -87,3 +102,14 @@ left edge and the game tag ("G1") in ember. The burned strip uses the same treat
 
 `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm check:data` pass. Stop after section 1 and report; stop
 again after section 3; then finish.
+
+## 7. Corrections after review of sections 3c to 6
+
+- **First visit lands on a placeholder player.** The most recent best-of-five (series 2950569) lists G2's top
+  laner as `LECTest1`, an account that appears in this one series only and so has no history. Choose the
+  default series as the most recent best-of-five in which all ten players have at least 20 earlier games.
+- **Flag placeholder accounts.** When a player has no earlier games, the cell shows the name with the note
+  "no earlier games in the data" in muted text, not "0 left" as a large number and not an ember warning.
+- **Backtest line position.** It sits in the footer below a tall empty area. Put it directly under the
+  matrix, and remove the empty space between the burned strip and the footer.
+- **Backtest wording.** Include the game count from the file: "Across 993 later games, ...".

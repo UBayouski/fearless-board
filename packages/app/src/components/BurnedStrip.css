@@ -3,14 +3,15 @@
 .burned-strip {
   margin: 1rem 0;
   padding: 0.75rem;
-  background: #fafafa;
-  border: 1px solid #eee;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 6px;
 }
 
 .burned-strip h3 {
   margin: 0 0 0.5rem;
   font-size: 0.95rem;
+  color: var(--ember);
 }
 
 .burned-game {
@@ -25,6 +26,7 @@
   font-size: 0.8rem;
   font-weight: 600;
   min-width: 4rem;
+  color: var(--ember);
 }
 
 .burned-champs {

@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Series-long League of Legends draft planner for Fearless Draft.",
   "license": "MIT",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "pnpm --filter @fearless-board/app dev",
@@ -18,5 +20,9 @@
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "~7.0.2"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/inter": "^5.3.0"
   }
 }

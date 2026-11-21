@@ -29,18 +29,19 @@ export function SeriesBoard({
     return draft.games.length
   })()
 
-  void onSelectGame
-
   const [revealedGames, setRevealedGames] = useState<Set<number>>(new Set())
 
   const t0 = teamMap.get(draft.teamIds[0])
   const t1 = teamMap.get(draft.teamIds[1])
+  const name0 = t0?.name ?? draft.teamIds[0]
+  const name1 = t1?.name ?? draft.teamIds[1]
 
   const score = useMemo(() => {
+    // 3c: Show score going into game N — count only games before gameNumber
     let score0 = 0
     let score1 = 0
     for (const g of draft.games) {
-      if (g.gameNumber >= gameNumber) break
+      if (g.gameNumber >= gameNumber) continue
       if (g.winnerTeamId === draft.teamIds[0]) score0++
       else if (g.winnerTeamId === draft.teamIds[1]) score1++
     }
@@ -55,61 +56,73 @@ export function SeriesBoard({
   const pastGames = draft.games.filter((g) => g.gameNumber < gameNumber)
   const revealedUpcoming = draft.games.filter((g) => g.gameNumber >= gameNumber && revealedGames.has(g.gameNumber))
 
+  const maxGames = draft.games.length
+
   return (
     <div className="series-board">
-      <h2>
-        {t0?.name ?? draft.teamIds[0]} vs {t1?.name ?? draft.teamIds[1]}
-      </h2>
-      <p className="series-info">
-        {draft.event} · {draft.stage} · {new Date(draft.scheduledStart).toLocaleDateString()}
-      </p>
-
-      {gameSides && (
-        <div className="series-state">
-          <span className="state-score">
-            {t0?.name ?? draft.teamIds[0]} {score.score0}–{score.score1} {t1?.name ?? draft.teamIds[1]}
-          </span>
-          <span className="state-sides">
-            · Game {gameNumber}:{' '}
-            {(() => {
-              const blueTeam = teamMap.get(gameSides.blue)
-              const redTeam = teamMap.get(gameSides.red)
-              return `${blueTeam?.name ?? gameSides.blue} blue, ${redTeam?.name ?? gameSides.red} red`
-            })()}
-          </span>
+      {/* ── Header: team names, score pips, sides ─────────── */}
+      <div className="series-header">
+        <div className="series-teams-display">
+          <span className="team-name display">{name0}</span>
+          <span className="series-vs">vs</span>
+          <span className="team-name display">{name1}</span>
         </div>
-      )}
-
-      {pastGames.length > 0 && (
-        <div className="history-row">
-          {pastGames.map((g) => (
-            <CompactHistoryCard
-              key={g.gameId}
-              game={g}
-              teamMap={teamMap}
-              championMap={championMap}
-              playerMap={playerMap}
-            />
-          ))}
+        <div className="series-score-line">
+          {/* Team 0 name + pips */}
+          <span className="team-name display" style={{ fontSize: '1.2rem' }}>{name0}</span>
+          <div className="score-pips">
+            {Array.from({ length: maxGames }, (_, i) => {
+              // 3c: Fill only for games before gameNumber
+              const game = draft.games[i]
+              const isPast = game && game.gameNumber < gameNumber
+              const won = isPast && game.winnerTeamId === draft.teamIds[0]
+              return <div key={i} className={`pip ${won ? 'filled' : ''}`} />
+            })}
+          </div>
+          <span className="score-text">{score.score0}–{score.score1}</span>
+          {/* Team 1 name + pips */}
+          <span className="team-name display" style={{ fontSize: '1.2rem' }}>{name1}</span>
+          <div className="score-pips">
+            {Array.from({ length: maxGames }, (_, i) => {
+              const game = draft.games[i]
+              const isPast = game && game.gameNumber < gameNumber
+              const won = isPast && game.winnerTeamId === draft.teamIds[1]
+              return <div key={i} className={`pip ${won ? 'filled' : ''}`} />
+            })}
+          </div>
         </div>
-      )}
+        {gameSides && (
+          <div className="series-sides-line">
+            Game {gameNumber}:{' '}
+            <span style={{ color: 'var(--blue-side)' }}>
+              {teamMap.get(gameSides.blue)?.name ?? gameSides.blue} blue
+            </span>
+            {' · '}
+            <span style={{ color: 'var(--red-side)' }}>
+              {teamMap.get(gameSides.red)?.name ?? gameSides.red} red
+            </span>
+          </div>
+        )}
+        <p className="series-info">
+          {draft.event} · {draft.stage} · {new Date(draft.scheduledStart).toLocaleDateString()}
+        </p>
+      </div>
 
-      {revealedUpcoming.length > 0 && (
-        <div className="games-row">
-          {revealedUpcoming.map((g) => (
-            <GameColumn
-              key={g.gameId}
-              game={g}
-              teamMap={teamMap}
-              championMap={championMap}
-              playerMap={playerMap}
-              isSelected={false}
-              onSelect={() => {}}
-            />
-          ))}
-        </div>
-      )}
+      {/* ── Game stepper ──────────────────────────────────── */}
+      <div className="game-stepper">
+        {draft.games.map((g) => (
+          <button
+            key={g.gameId}
+            className={gameNumber === g.gameNumber ? 'selected' : ''}
+            onClick={() => onSelectGame(g.gameNumber)}
+            disabled={g.gameNumber > gameNumber && !revealedGames.has(g.gameNumber)}
+          >
+            Game {g.gameNumber}
+          </button>
+        ))}
+      </div>
 
+      {/* ── Reveal button for unrevealed selected game ────── */}
       {(() => {
         const selectedUpcoming = draft.games.find((g) => g.gameNumber === gameNumber && !revealedGames.has(g.gameNumber))
         if (selectedUpcoming) {
@@ -149,8 +162,7 @@ export function SeriesBoard({
         return null
       })()}
 
-      {gameNumber && <BurnedStrip games={draft.games} gameNumber={gameNumber} championMap={championMap} />}
-
+      {/* ── Pool matrix (first, within 300px) ─────────────── */}
       {gameNumber && (
         <PoolMatrix
           draft={draft}
@@ -162,6 +174,41 @@ export function SeriesBoard({
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
         />
       )}
+
+      {/* ── History cards ─────────────────────────────────── */}
+      {pastGames.length > 0 && (
+        <div className="history-row">
+          {pastGames.map((g) => (
+            <CompactHistoryCard
+              key={g.gameId}
+              game={g}
+              teamMap={teamMap}
+              championMap={championMap}
+              playerMap={playerMap}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Revealed upcoming games ───────────────────────── */}
+      {revealedUpcoming.length > 0 && (
+        <div className="games-row">
+          {revealedUpcoming.map((g) => (
+            <GameColumn
+              key={g.gameId}
+              game={g}
+              teamMap={teamMap}
+              championMap={championMap}
+              playerMap={playerMap}
+              isSelected={false}
+              onSelect={() => {}}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Burned strip (below history) ──────────────────── */}
+      {gameNumber && <BurnedStrip games={draft.games} gameNumber={gameNumber} championMap={championMap} />}
     </div>
   )
 }

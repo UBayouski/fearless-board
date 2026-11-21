@@ -30,12 +30,22 @@ export function PoolMatrixCell({
   const burnedSet = new Set(pool.burned.map((e) => e.championId))
   const share = burnedGameShare(allPool, burnedSet)
 
-  const timeAgo = (lastPlayed: string) => {
+  // 4: Comfort bar — relative to most-played champion
+  const maxGames = pool.credible.length > 0 ? Math.max(...pool.credible.map((e) => e.games)) : 0
+
+  const weeksAgo = (lastPlayed: string) => {
     const diff = Date.parse(seriesDate) - Date.parse(lastPlayed)
     const days = Math.round(diff / (24 * 60 * 60 * 1000))
     if (days < 14) return `${days} d ago`
     const weeks = Math.round(days / 7)
     return `${weeks} w ago`
+  }
+
+  // 4: Recency — more than 12 weeks ago renders at 60% opacity
+  const isStale = (lastPlayed: string) => {
+    const diff = Date.parse(seriesDate) - Date.parse(lastPlayed)
+    const weeks = diff / (7 * 24 * 60 * 60 * 1000)
+    return weeks > 12
   }
 
   const hasReveal = revealedPick !== undefined
@@ -49,14 +59,21 @@ export function PoolMatrixCell({
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
       <div className="pool-cell-summary">
-        {pool.credible.length} left · {burnedCount} burned · {share}% of games burned
+        <span className="big-number display">{pool.credible.length}</span> left
+        {' · '}<span className="burned-count">{burnedCount} burned</span>
+      </div>
+      <div className="burn-meter-row">
+        <div className="burn-meter-bar">
+          <div className="burn-meter-fill" style={{ width: `${Math.min(share, 100)}%` }} />
+        </div>
+        <span className="burn-meter-share">{share}% of games burned</span>
       </div>
 
       {hasReveal && isNewPick && (
         <div className="pool-cell-section">
-          <span className="champ-tile pool-new">
+          <button type="button" className="champ-tile-btn pool-new" aria-label={`${championMap.get(revealedPick!.championId)?.name ?? revealedPick!.championId}, new pick`}>
             {championMap.get(revealedPick!.championId)?.name ?? revealedPick!.championId} <small>new</small>
-          </span>
+          </button>
         </div>
       )}
 
@@ -64,12 +81,27 @@ export function PoolMatrixCell({
         <div className="pool-cell-section">
           {pool.credible.map((e) => {
             const champ = championMap.get(e.championId)
-            const ago = timeAgo(e.lastPlayed)
+            const ago = weeksAgo(e.lastPlayed)
             const highlighted = hasReveal && pickInPool && revealedPick !== null && e.championId === revealedPick.championId
+            // 4: Comfort bar width as share of most-played champion
+            const comfortShare = maxGames > 0 ? (e.games / maxGames) * 100 : 0
+            // 4: Stale tiles at 60% opacity
+            const stale = isStale(e.lastPlayed)
             return (
-              <span key={e.championId} className={`champ-tile pool-available ${highlighted ? 'pool-highlighted' : ''}`}>
-                {champ?.name ?? e.championId} <small>{e.games}g · {ago}{highlighted && revealedPick ? ` · rank #${revealedPick.rank}` : ''}</small>
-              </span>
+              // 4: Real button element with focus ring
+              <button
+                key={e.championId}
+                type="button"
+                className={`champ-tile-btn pool-available ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''}`}
+                style={{ '--comfort': `${comfortShare}%` } as React.CSSProperties}
+                aria-label={`${champ?.name ?? e.championId}, ${e.games} games, ${ago}`}
+              >
+                <span className="champ-tile-inner">
+                  {champ?.name ?? e.championId}
+                  <span className="comfort-bar" style={{ width: `${comfortShare}%` }} />
+                </span>
+                <small>{e.games}g · {ago}{highlighted && revealedPick ? ` · #${revealedPick.rank}` : ''}</small>
+              </button>
             )
           })}
         </div>
@@ -81,9 +113,14 @@ export function PoolMatrixCell({
             const champ = championMap.get(e.championId)
             const burnedGame = burnedByGame.get(e.championId)
             return (
-              <span key={e.championId} className="champ-tile pool-burned">
+              <button
+                key={e.championId}
+                type="button"
+                className="champ-tile-btn pool-burned"
+                aria-label={`${champ?.name ?? e.championId}, burned in Game ${burnedGame ?? 'unknown'}`}
+              >
                 {champ?.name ?? e.championId} <small>G{burnedGame ?? '?'}</small>
-              </span>
+              </button>
             )
           })}
         </div>

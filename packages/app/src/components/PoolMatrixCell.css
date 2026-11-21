@@ -2,11 +2,13 @@
 
 .pool-cell {
   padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .pool-cell-empty {
   padding: 0.5rem 0.75rem;
-  color: #bdbdbd;
+  color: var(--muted);
   text-align: center;
   display: flex;
   align-items: center;
@@ -24,19 +26,64 @@
 .pool-cell-name {
   font-weight: 600;
   font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .pool-cell-role {
   font-size: 0.65rem;
-  color: #757575;
+  color: var(--muted);
   text-transform: uppercase;
+  letter-spacing: 0.08em;
   font-weight: 700;
+  font-family: 'Barlow Condensed', sans-serif;
 }
 
 .pool-cell-summary {
   font-size: 0.75rem;
-  color: #757575;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 3c: "X left" as large number (~28px), "Y burned" beside it in ember */
+.pool-cell-summary .big-number {
+  font-size: 1.75rem;
+  line-height: 1;
+  color: var(--text);
+}
+
+.pool-cell-summary .burned-count {
+  color: var(--ember);
+}
+
+/* ── Burn meter ─────────────────────────────────────────────── */
+.burn-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 0.4rem;
+}
+
+.burn-meter-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.burn-meter-fill {
+  height: 100%;
+  background: var(--ember);
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+.burn-meter-share {
+  font-size: 0.7rem;
+  color: var(--ember);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .pool-cell-section {
@@ -46,42 +93,127 @@
   margin-bottom: 0.3rem;
 }
 
+/* ── 4: Button-based champion tiles ─────────────────────────── */
+
+.champ-tile-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 0.2rem 0.5rem;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 0.875rem; /* 14px */
+  color: var(--text);
+  cursor: default;
+  text-align: left;
+  line-height: 1.2;
+  font-family: inherit;
+}
+
+.champ-tile-btn:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
+}
+
+.champ-tile-btn small {
+  color: var(--muted);
+  font-size: 0.75rem; /* 12px */
+}
+
+/* 4: Comfort bar under champion name */
+.champ-tile-inner {
+  position: relative;
+  padding-bottom: 2px;
+}
+
+.comfort-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
+  opacity: 0.3;
+}
+
+/* 4: Stale tiles — last played >12 weeks ago */
+.champ-tile-btn.stale {
+  opacity: 0.6;
+}
+
+/* 3c: Burned tiles — dim text, strike-through, 2px ember left edge, ember game tag */
+.champ-tile-btn.pool-burned {
+  text-decoration: line-through;
+  border-left: 2px solid var(--ember);
+  color: var(--ember);
+  background: var(--surface-2);
+}
+
+.champ-tile-btn.pool-burned small {
+  color: var(--ember);
+}
+
+/* Keep legacy .champ-tile styles for non-pool-cell usage */
 .pool-cell-section .champ-tile {
-  font-size: 0.7rem !important;
+  font-size: 0.875rem !important; /* 14px */
 }
 
 .pool-cell-section .champ-tile small {
-  color: #757575;
-  font-size: 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem; /* 12px */
 }
 
 .pool-limited-note {
   font-size: 0.7rem;
-  color: #ff9800;
+  color: var(--ember);
   font-style: italic;
   margin-top: 0.3rem;
 }
 
-/* ── Reveal styles ──────────────────────────────────────────── */
+/* ── 5: Reveal styles ──────────────────────────────────────── */
 
 .pool-highlighted {
-  background: #fff9c4 !important;
-  border: 2px solid #f9a825 !important;
+  background: var(--surface-2) !important;
+  border: 2px solid var(--hit) !important;
   font-weight: 700 !important;
+  color: var(--hit) !important;
 }
 
 .pool-new {
-  background: #e1bee7 !important;
-  border: 2px solid #8e24aa !important;
+  background: var(--surface-2) !important;
+  border: 2px solid var(--new) !important;
   font-weight: 700 !important;
+  color: var(--new) !important;
 }
 
+/* 5: Result banner above the matrix */
 .reveal-summary {
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: #e8f5e9;
+  padding: 0.6rem 1rem;
+  background: rgba(61, 220, 151, 0.08);
+  border: 1px solid var(--hit);
   border-radius: 4px;
-  color: #2e7d32;
+  color: var(--hit);
+  text-align: center;
+}
+
+/* 5: 200ms highlight transition */
+.champ-tile-btn {
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.champ-tile {
+  transition: outline-color 0.2s, border-color 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .champ-tile-btn,
+  .champ-tile,
+  .burn-meter-fill {
+    transition: none;
+  }
 }
