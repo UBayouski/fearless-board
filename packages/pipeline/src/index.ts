@@ -3,7 +3,7 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest } from '@fearless-board/shared'
+import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role } from '@fearless-board/shared'
 import {
   parseCSV,
   type GameRow,
@@ -15,9 +15,9 @@ import { readJsonlZst } from './zst.ts'
 const start = performance.now()
 
 const dataDir = process.env.STL_DATA_DIR ?? resolve(import.meta.dirname, '../../../../stl-hackathon-2026-grid-starter')
-const seriesIndex = resolve(dataDir, 'lol/series.csv')
+const seriesIndexPath = resolve(dataDir, 'lol/series.csv')
 
-if (!existsSync(seriesIndex)) {
+if (!existsSync(seriesIndexPath)) {
   console.error(`Hackathon data not found at ${dataDir}`)
   console.error('Clone the data repo next to this project, or set STL_DATA_DIR. See README.md.')
   process.exit(1)
@@ -26,7 +26,8 @@ if (!existsSync(seriesIndex)) {
 // Task 1: Read the index files
 console.log('Reading index files...')
 
-const games = parseCSV<GameRow>(resolve(dataDir, 'meta/games.csv')).filter(r => r.title === 'lol')
+const games = parseCSV<GameRow>(resolve(dataDir, 'meta/games.csv'))
+  .filter(r => r.title === 'lol' && r.finished === 'True')
 const rosters = parseCSV<RosterRow>(resolve(dataDir, 'meta/rosters.csv')).filter(r => r.title === 'lol')
 const allSeries = parseCSV<SeriesRow>(resolve(dataDir, 'lol/series.csv'))
 
@@ -299,13 +300,235 @@ for (const series of lolSeries) {
 // Sort drafts by scheduled start
 drafts.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart))
 
+// Task 2c: Detect roles from match file player positions
+console.log('Detecting roles from match file positions...')
+
+interface PlayerPosition {
+  x: number
+  y: number
+}
+
+interface PlayerRoleData {
+  playerId: string
+  name: string
+  teamId: string
+  side: string
+  positions: PlayerPosition[]
+}
+
+// Collect player positions at 150-300s after game start from all match files
+const playerPositionsByGame = new Map<string, Map<string, PlayerRoleData>>()
+const endGameStats = new Map<string, Map<string, { minionKills: number }>>()
+
+for (const series of lolSeries) {
+  const matchPath = resolve(dataDir, series.file)
+  if (!existsSync(matchPath)) continue
+
+  try {
+    let gameStartedAt: string | null = null
+    let currentGameId: string | null = null
+
+    for await (const line of readJsonlZst(matchPath)) {
+      const events = (line as any).events || []
+      for (const ev of events) {
+        if (ev.type === 'series-started-game') {
+          gameStartedAt = ev.target.state.startedAt
+          currentGameId = ev.target.id as string
+          playerPositionsByGame.set(currentGameId, new Map())
+        }
+        // Collect positions from player events
+        if (ev.actor?.state?.game?.position && gameStartedAt && currentGameId) {
+          const elapsed = (Date.parse(String((line as any).occurredAt)) - Date.parse(gameStartedAt)) / 1000
+          if (elapsed >= 150 && elapsed <= 300) {
+            const actor = ev.actor.state
+            const gameMap = playerPositionsByGame.get(currentGameId)
+            if (!gameMap) continue
+            let pdata = gameMap.get(actor.id)
+            if (!pdata) {
+              pdata = { playerId: actor.id, name: actor.name, teamId: actor.teamId, side: actor.side, positions: [] }
+              gameMap.set(actor.id, pdata)
+            }
+            pdata.positions.push({ x: actor.game.position.x, y: actor.game.position.y })
+          }
+        }
+        // Collect end-of-game stats
+        if (ev.type === 'tournament-ended-series' && ev.target?.state?.games) {
+          for (const game of ev.target.state.games) {
+            if (!playerPositionsByGame.has(game.id)) continue
+            const statsMap = new Map<string, { minionKills: number }>()
+            for (const team of game.teams) {
+              for (const p of team.players) {
+                let mk = 0
+                if (Array.isArray(p.unitKills)) {
+                  for (const uk of p.unitKills) {
+                    if (uk.unitName === 'minion') mk += uk.count
+                  }
+                }
+                statsMap.set(p.id, { minionKills: mk })
+              }
+            }
+            endGameStats.set(game.id, statsMap)
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // skip
+  }
+}
+
+// Classify roles per team per game
+function classifyRoles(
+  players: PlayerRoleData[],
+  gameId: string,
+): Map<string, Role> | null {
+  if (players.length !== 5) return null
+
+  interface AvgPlayer {
+    playerId: string
+    name: string
+    avgX: number
+    avgY: number
+    diff: number
+  }
+
+  const avgs: AvgPlayer[] = players.map(p => ({
+    playerId: p.playerId,
+    name: p.name,
+    avgX: p.positions.reduce((s, v) => s + v.x, 0) / p.positions.length,
+    avgY: p.positions.reduce((s, v) => s + v.y, 0) / p.positions.length,
+    diff: 0,
+  }))
+
+  // Use x-y diff to separate lanes
+  for (const a of avgs) a.diff = a.avgX - a.avgY
+  const sorted = [...avgs].sort((a, b) => a.diff - b.diff)
+
+  // Mid = closest to 0 diff
+  const mid = sorted.reduce((best, p) => Math.abs(p.diff) < Math.abs(best.diff) ? p : best)
+  const remaining = sorted.filter(p => p.playerId !== mid.playerId)
+
+  const neg = remaining.filter(p => p.diff < 0)
+  const pos = remaining.filter(p => p.diff > 0)
+
+  let duo: AvgPlayer[], soloGroup: AvgPlayer[], topPlayer: AvgPlayer | null = null
+
+  if (neg.length === 2 && pos.length === 2) {
+    const negSpread = neg[1].diff - neg[0].diff
+    const posSpread = pos[1].diff - pos[0].diff
+    duo = negSpread < posSpread ? neg : pos
+    soloGroup = negSpread < posSpread ? pos : neg
+  } else if (neg.length === 3 && pos.length === 1) {
+    topPlayer = pos[0]
+    neg.sort((a, b) => a.diff - b.diff)
+    if (Math.abs(neg[0].diff - neg[1].diff) < Math.abs(neg[1].diff - neg[2].diff)) {
+      duo = [neg[0], neg[1]]
+      soloGroup = [neg[2]]
+    } else {
+      duo = [neg[1], neg[2]]
+      soloGroup = [neg[0]]
+    }
+  } else if (pos.length === 3 && neg.length === 1) {
+    topPlayer = neg[0]
+    pos.sort((a, b) => a.diff - b.diff)
+    if (Math.abs(pos[0].diff - pos[1].diff) < Math.abs(pos[1].diff - pos[2].diff)) {
+      duo = [pos[0], pos[1]]
+      soloGroup = [pos[2]]
+    } else {
+      duo = [pos[1], pos[2]]
+      soloGroup = [pos[0]]
+    }
+  } else {
+    return null // Can't classify
+  }
+
+  const top = topPlayer || soloGroup.reduce((best, p) => Math.abs(p.diff) > Math.abs(best.diff) ? p : best)
+  const jungler = soloGroup.filter(p => p.playerId !== top.playerId)[0]
+  if (!jungler) return null
+
+  // Split duo by minion kills
+  const stats = endGameStats.get(gameId)
+  const statsA = stats?.get(duo[0].playerId) || { minionKills: 0 }
+  const statsB = stats?.get(duo[1].playerId) || { minionKills: 0 }
+  const bot = statsA.minionKills >= statsB.minionKills ? duo[0] : duo[1]
+  const support = statsA.minionKills >= statsB.minionKills ? duo[1] : duo[0]
+
+  const roles = new Map<string, Role>()
+  roles.set(top.playerId, 'top')
+  roles.set(jungler.playerId, 'jungle')
+  roles.set(mid.playerId, 'mid')
+  roles.set(bot.playerId, 'bot')
+  roles.set(support.playerId, 'support')
+  return roles
+}
+
+// Aggregate roles per player across all games
+const playerRoleCounts = new Map<string, Map<Role, number>>()
+let totalTeamGames = 0
+let fiveDistinctRoles = 0
+
+for (const [gameId, gamePlayers] of playerPositionsByGame) {
+  const bySide = new Map<string, PlayerRoleData[]>()
+  for (const p of gamePlayers.values()) {
+    const list = bySide.get(p.side) ?? []
+    list.push(p)
+    bySide.set(p.side, list)
+  }
+
+  for (const [, players] of bySide) {
+    if (players.length !== 5) continue
+    totalTeamGames++
+
+    const roles = classifyRoles(players, gameId)
+    if (!roles) continue
+
+    const distinctRoles = new Set(roles.values())
+    if (distinctRoles.size === 5) fiveDistinctRoles++
+
+    for (const [playerId, role] of roles) {
+      let roleMap = playerRoleCounts.get(playerId)
+      if (!roleMap) {
+        roleMap = new Map()
+        playerRoleCounts.set(playerId, roleMap)
+      }
+      roleMap.set(role, (roleMap.get(role) ?? 0) + 1)
+    }
+  }
+}
+
+// Assign each player their most frequent role (only if >= 80% agreement)
+const playerRole = new Map<string, Role | null>()
+const unclearPlayers: string[] = []
+
+for (const [playerId, roleMap] of playerRoleCounts) {
+  const totalGames = [...roleMap.values()].reduce((s, v) => s + v, 0)
+  let maxRole: Role | null = null
+  let maxCount = 0
+  for (const [role, count] of roleMap) {
+    if (count > maxCount) {
+      maxCount = count
+      maxRole = role
+    }
+  }
+  if (maxRole && maxCount / totalGames >= 0.8) {
+    playerRole.set(playerId, maxRole)
+  } else {
+    playerRole.set(playerId, null)
+    if (totalGames >= 2) unclearPlayers.push(playerId)
+  }
+}
+
+console.log(`  Team-games with positions: ${totalTeamGames}`)
+console.log(`  Team-games with 5 distinct roles: ${fiveDistinctRoles}`)
+console.log(`  Share: ${(fiveDistinctRoles / totalTeamGames * 100).toFixed(1)}%`)
+console.log(`  Players with clear role: ${[...playerRole.entries()].filter(([, r]) => r !== null).length}`)
+console.log(`  Players with unclear role: ${unclearPlayers.length}`)
+
 // Task 6: Write output
 console.log('Writing output...')
 
 const outputDir = resolve(import.meta.dirname, '../../app/public/data')
 mkdirSync(outputDir, { recursive: true })
-
-// Write manifest
 
 // Build team and champion refs from the games/rosters data
 const teamRefMap = new Map<string, string>()
@@ -315,9 +538,11 @@ for (const g of games) {
 }
 
 const championRefMap = new Map<string, string>()
+const playerRefMap = new Map<string, string>()
 for (const r of rosters) {
   if (r.participation_status === 'active' && r.character_id) {
     championRefMap.set(r.character_id, r.character_name)
+    playerRefMap.set(r.player_id, r.player_name)
   }
 }
 
@@ -329,17 +554,98 @@ const manifest: Manifest = {
   gameCount: totalGames,
   teams: [...teamRefMap.entries()].map(([id, name]) => ({ id, name })),
   champions: [...championRefMap.entries()].map(([id, name]) => ({ id, name })),
+  players: [...playerRefMap.entries()].map(([id, name]) => ({
+    id, name, role: playerRole.get(id) ?? null,
+  })),
 }
 
-writeFileSync(resolve(outputDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
+writeFileSync(resolve(outputDir, 'manifest.json'), JSON.stringify(manifest))
+
+// Write series-index.json
+const seriesIndex: SeriesIndexEntry[] = []
+for (const draft of drafts) {
+  // Find winner: the team that won the series (most games)
+  let winnerTeamId: string | null = null
+  const teamWins = new Map<string, number>()
+  for (const game of draft.games) {
+    if (game.winnerTeamId) {
+      teamWins.set(game.winnerTeamId, (teamWins.get(game.winnerTeamId) ?? 0) + 1)
+    }
+  }
+  for (const teamId of draft.teamIds) {
+    if (!winnerTeamId || (teamWins.get(teamId) ?? 0) > (teamWins.get(winnerTeamId) ?? 0)) {
+      winnerTeamId = teamId
+    }
+  }
+  // If tied, no winner
+  if (draft.teamIds[0] && draft.teamIds[1]) {
+    const wins0 = teamWins.get(draft.teamIds[0]) ?? 0
+    const wins1 = teamWins.get(draft.teamIds[1]) ?? 0
+    if (wins0 === wins1) winnerTeamId = null
+    else if (wins0 > wins1) winnerTeamId = draft.teamIds[0]
+    else winnerTeamId = draft.teamIds[1]
+  }
+
+  seriesIndex.push({
+    seriesId: draft.seriesId,
+    scheduledStart: draft.scheduledStart,
+    event: draft.event,
+    stage: draft.stage,
+    teamIds: draft.teamIds,
+    gameCount: draft.games.length,
+    winnerTeamId,
+  })
+}
+writeFileSync(resolve(outputDir, 'series-index.json'), JSON.stringify(seriesIndex))
+
+// Write compact picks.json
+const seriesIdList: string[] = []
+const seriesIdIdx = new Map<string, number>()
+const teamIdList: string[] = []
+const teamIdIdx = new Map<string, number>()
+const playerIdList: string[] = []
+const playerIdIdx = new Map<string, number>()
+const championIdList: string[] = []
+const championIdIdx = new Map<string, number>()
+
+function getIdx(list: string[], map: Map<string, number>, id: string) {
+  let idx = map.get(id)
+  if (idx === undefined) {
+    idx = list.length
+    list.push(id)
+    map.set(id, idx)
+  }
+  return idx
+}
+
+const compactRows: number[][] = []
+for (const draft of drafts) {
+  const si = getIdx(seriesIdList, seriesIdIdx, draft.seriesId)
+  for (const game of draft.games) {
+    const won = game.winnerTeamId ?? ''
+    for (const pick of game.picks) {
+      const ti = getIdx(teamIdList, teamIdIdx, pick.teamId)
+      const pi = getIdx(playerIdList, playerIdIdx, pick.playerId)
+      const ci = getIdx(championIdList, championIdIdx, pick.championId)
+      compactRows.push([si, game.gameNumber, ti, pi, ci, pick.teamId === won ? 1 : 0])
+    }
+  }
+}
+
+const compactPicks: CompactPicks = {
+  series: seriesIdList,
+  teams: teamIdList,
+  players: playerIdList,
+  champions: championIdList,
+  rows: compactRows,
+}
+writeFileSync(resolve(outputDir, 'picks.json'), JSON.stringify(compactPicks))
 
 // Write individual series files
 for (const draft of drafts) {
   const file = resolve(outputDir, `${draft.seriesId}.json`)
-  writeFileSync(file, JSON.stringify(draft, null, 2))
+  writeFileSync(file, JSON.stringify(draft))
 }
-
-const elapsed = ((performance.now() - start) / 1000).toFixed(1)
 
 // Calculate output size
 let totalSize = 0
@@ -347,11 +653,36 @@ for (const draft of drafts) {
   totalSize += Buffer.byteLength(JSON.stringify(draft))
 }
 totalSize += Buffer.byteLength(JSON.stringify(manifest))
+totalSize += Buffer.byteLength(JSON.stringify(seriesIndex))
+totalSize += Buffer.byteLength(JSON.stringify(compactPicks))
+
+// Count draft action completeness
+let gamesWith20Actions = 0
+let gamesWithPartialActions = 0
+let gamesWithNoActions = 0
+for (const draft of drafts) {
+  for (const game of draft.games) {
+    if (game.actions.length === 0) {
+      gamesWithNoActions++
+    } else if (game.actions.length < 20) {
+      gamesWithPartialActions++
+    } else {
+      gamesWith20Actions++
+    }
+  }
+}
+
+const elapsed = ((performance.now() - start) / 1000).toFixed(1)
 
 console.log(`\nOutput:`)
 console.log(`  Series: ${drafts.length}`)
 console.log(`  Games: ${totalGames}`)
-console.log(`  Games with complete draft actions: ${gamesWithActions}`)
-console.log(`  Output size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
+console.log(`  Games with 20 draft actions: ${gamesWith20Actions}`)
+console.log(`  Games with partial draft actions: ${gamesWithPartialActions}`)
+console.log(`  Games with no draft actions: ${gamesWithNoActions}`)
+console.log(`  series-index.json: ${(Buffer.byteLength(JSON.stringify(seriesIndex)) / 1024).toFixed(1)} KB`)
+console.log(`  picks.json (compact): ${(Buffer.byteLength(JSON.stringify(compactPicks)) / 1024).toFixed(1)} KB`)
+console.log(`  manifest.json: ${(Buffer.byteLength(JSON.stringify(manifest)) / 1024).toFixed(1)} KB`)
+console.log(`  Total output size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
 console.log(`  Run time: ${elapsed}s`)
 console.log(`  Written to: ${outputDir}`)

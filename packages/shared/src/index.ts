@@ -48,6 +48,14 @@ export interface SeriesDraft {
   games: GameDraft[]
 }
 
+export type Role = 'top' | 'jungle' | 'mid' | 'bot' | 'support'
+
+export interface PlayerRef {
+  id: string
+  name: string
+  role: Role | null
+}
+
 /** Index file the app loads first. */
 export interface Manifest {
   generatedAt: string
@@ -55,6 +63,57 @@ export interface Manifest {
   gameCount: number
   teams: TeamRef[]
   champions: ChampionRef[]
+  players: PlayerRef[]
+}
+
+/** One row per series for the series picker. */
+export interface SeriesIndexEntry {
+  seriesId: string
+  scheduledStart: string
+  event: string
+  stage: string
+  teamIds: [string, string]
+  gameCount: number
+  winnerTeamId: string | null
+}
+
+/** One compact row per player pick across all games. */
+export interface PickRow {
+  scheduledStart: string
+  seriesId: string
+  gameNumber: number
+  teamId: string
+  playerId: string
+  championId: string
+  won: boolean
+}
+
+/** Compact picks file structure: lists + array rows. */
+export interface CompactPicks {
+  /** Ordered lists for decoding: index → id */
+  series: string[]
+  teams: string[]
+  players: string[]
+  champions: string[]
+  /** Rows: [seriesIdx, gameNumber, teamIdx, playerIdx, championIdx, wonAs0or1] */
+  rows: number[][]
+}
+
+/** Decode a compact picks row back to PickRow format. */
+export function decodeCompactPicks(cp: CompactPicks): PickRow[] {
+  const result: PickRow[] = []
+  for (const row of cp.rows) {
+    result.push({
+      scheduledStart: '',
+      seriesId: cp.series[row[0]],
+      gameNumber: row[1],
+      teamId: cp.teams[row[2]],
+      playerId: cp.players[row[3]],
+      championId: cp.champions[row[4]],
+      won: row[5] === 1,
+    })
+  }
+  return result
 }
 
 /**
@@ -68,8 +127,15 @@ export function burnedChampions(games: readonly GameDraft[], gameNumber: number)
   const burned = new Set<string>()
   for (const game of games) {
     if (game.gameNumber >= gameNumber) continue
-    for (const action of game.actions) {
-      if (action.type === 'pick') burned.add(action.championId)
+    // Prefer picks (always available) over actions (may be missing for forfeits)
+    if (game.picks.length > 0) {
+      for (const pick of game.picks) {
+        burned.add(pick.championId)
+      }
+    } else {
+      for (const action of game.actions) {
+        if (action.type === 'pick') burned.add(action.championId)
+      }
     }
   }
   return burned
