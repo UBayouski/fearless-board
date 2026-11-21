@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry } from './index.ts'
+import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft } from './index.ts'
 
 const action = (order: number, type: DraftAction['type'], teamId: string, championId: string): DraftAction => ({
   order,
@@ -160,4 +160,175 @@ test('crediblePool with no burned champions', () => {
   const { credible, burned: burnedEntries } = crediblePool(pool, burned)
   assert.equal(credible.length, 1)
   assert.equal(burnedEntries.length, 0)
+})
+
+test('burnedGameShare returns correct percentage', () => {
+  const pool: PoolEntry[] = [
+    { championId: 'c1', games: 10, wins: 5, lastPlayed: '2025-01-01' },
+    { championId: 'c2', games: 5, wins: 3, lastPlayed: '2025-01-02' },
+    { championId: 'c3', games: 5, wins: 2, lastPlayed: '2025-01-03' },
+  ]
+  const burned = new Set(['c2', 'c3'])
+
+  // 10 games on c1 (not burned) + 5 games on c2 (burned) + 5 games on c3 (burned) = 20 total
+  // burned games = 10, share = 50%
+  assert.equal(burnedGameShare(pool, burned), 50)
+})
+
+test('burnedGameShare never exceeds 100%', () => {
+  const pool: PoolEntry[] = [
+    { championId: 'c1', games: 5, wins: 3, lastPlayed: '2025-01-01' },
+    { championId: 'c2', games: 3, wins: 2, lastPlayed: '2025-01-02' },
+  ]
+  const burned = new Set(['c1', 'c2'])
+
+  // All champions burned: 8/8 = 100%
+  assert.equal(burnedGameShare(pool, burned), 100)
+})
+
+test('burnedGameShare is 0 when nothing burned', () => {
+  const pool: PoolEntry[] = [
+    { championId: 'c1', games: 5, wins: 3, lastPlayed: '2025-01-01' },
+  ]
+  const burned = new Set<string>()
+
+  assert.equal(burnedGameShare(pool, burned), 0)
+})
+
+test('burnedGameShare is 0 for empty pool', () => {
+  const pool: PoolEntry[] = []
+  const burned = new Set(['c1'])
+
+  assert.equal(burnedGameShare(pool, burned), 0)
+})
+
+test('backtest computes correct summary', () => {
+  // Create a simple series with 2 games
+  const series: SeriesDraft = {
+    seriesId: 's1',
+    event: 'Test',
+    stage: 'Test',
+    scheduledStart: '2025-02-01',
+    teamIds: ['tA', 'tB'],
+    games: [
+      {
+        gameId: 'g1',
+        gameNumber: 1,
+        patch: null,
+        sides: { blue: 'tA', red: 'tB' },
+        winnerTeamId: 'tA',
+        actions: [],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
+          { teamId: 'tB', playerId: 'p2', playerName: 'Player2', championId: 'c2' },
+        ],
+      },
+      {
+        gameId: 'g2',
+        gameNumber: 2,
+        patch: null,
+        sides: { blue: 'tB', red: 'tA' },
+        winnerTeamId: 'tB',
+        actions: [],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c3' }, // c3 is new (not in pool before this series)
+          { teamId: 'tB', playerId: 'p2', playerName: 'Player2', championId: 'c4' }, // c4 is new
+        ],
+      },
+    ],
+  }
+
+  // Prior picks: p1 played c1 in an earlier series, p2 played c2 and c4
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),  // p1's prior: c1
+    pickRow('2025-01-01', 's0', 1, 'tB', 'p2', 'c2', true),  // p2's prior: c2
+    pickRow('2025-01-10', 's0b', 1, 'tB', 'p2', 'c4', true), // p2's prior: c4
+  ]
+
+  const { games, summary } = backtest([series], picks)
+
+  // Only game 2 should be analyzed (game 1 is skipped)
+  assert.equal(games.length, 1)
+  assert.equal(games[0].gameNumber, 2)
+  assert.equal(games[0].players.length, 2) // 2 picks in game 2
+
+  // c1 and c2 are burned (from game 1)
+  // p1's pool before series: [c1]. After burning c1: credible = []
+  // p1 picks c3 → not in pool
+  // p2's pool before series: [c2, c4]. After burning c2: credible = [c4]
+  // p2 picks c4 → in pool, rank 1
+
+  assert.equal(summary.totalPicks, 2)
+  assert.equal(summary.inPool, 50) // 1 of 2 (p2's c4)
+  assert.equal(summary.inTop3, 50) // 1 of 2
+  assert.equal(summary.inTop5, 50) // 1 of 2
+})
+
+test('backtest skips single-game series', () => {
+  const series: SeriesDraft = {
+    seriesId: 's1',
+    event: 'Test',
+    stage: 'Test',
+    scheduledStart: '2025-02-01',
+    teamIds: ['tA', 'tB'],
+    games: [
+      {
+        gameId: 'g1',
+        gameNumber: 1,
+        patch: null,
+        sides: { blue: 'tA', red: 'tB' },
+        winnerTeamId: 'tA',
+        actions: [],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
+        ],
+      },
+    ],
+  }
+
+  const { games, summary } = backtest([series], [])
+  assert.equal(games.length, 0)
+  assert.equal(summary.totalPicks, 0)
+})
+
+test('backtest skips game 1', () => {
+  const series: SeriesDraft = {
+    seriesId: 's1',
+    event: 'Test',
+    stage: 'Test',
+    scheduledStart: '2025-02-01',
+    teamIds: ['tA', 'tB'],
+    games: [
+      {
+        gameId: 'g1',
+        gameNumber: 1,
+        patch: null,
+        sides: { blue: 'tA', red: 'tB' },
+        winnerTeamId: 'tA',
+        actions: [],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
+        ],
+      },
+      {
+        gameId: 'g2',
+        gameNumber: 2,
+        patch: null,
+        sides: { blue: 'tB', red: 'tA' },
+        winnerTeamId: 'tB',
+        actions: [],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c2' },
+        ],
+      },
+    ],
+  }
+
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c2', true),
+  ]
+
+  const { games } = backtest([series], picks)
+  assert.equal(games.length, 1)
+  assert.equal(games[0].gameNumber, 2)
 })

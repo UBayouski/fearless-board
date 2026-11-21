@@ -3,7 +3,8 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role } from '@fearless-board/shared'
+import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow } from '@fearless-board/shared'
+import { backtest } from '@fearless-board/shared'
 import {
   parseCSV,
   type GameRow,
@@ -714,6 +715,39 @@ for (const draft of drafts) {
   }
 }
 
+// Section 5: Backtest
+console.log('Running backtest...')
+
+// Build PickRow array from all drafts (for backtest, we need all picks including those in the current series)
+const allPicks: PickRow[] = []
+for (const draft of drafts) {
+  for (const game of draft.games) {
+    const won = game.winnerTeamId ?? ''
+    for (const pick of game.picks) {
+      allPicks.push({
+        scheduledStart: draft.scheduledStart,
+        seriesId: draft.seriesId,
+        gameNumber: game.gameNumber,
+        teamId: pick.teamId,
+        playerId: pick.playerId,
+        championId: pick.championId,
+        won: pick.teamId === won,
+      })
+    }
+  }
+}
+
+const { games: backtestGames, summary: backtestSummary } = backtest(drafts, allPicks)
+
+// Write backtest.json (summary only, per-game data is too large)
+const backtestOutput = {
+  generatedAt: new Date().toISOString(),
+  seriesCount: drafts.length,
+  gameCount: backtestGames.length,
+  summary: backtestSummary,
+}
+writeFileSync(resolve(outputDir, 'backtest.json'), JSON.stringify(backtestOutput))
+
 const elapsed = ((performance.now() - start) / 1000).toFixed(1)
 
 console.log(`\nOutput:`)
@@ -726,5 +760,15 @@ console.log(`  series-index.json: ${(Buffer.byteLength(JSON.stringify(seriesInde
 console.log(`  picks.json (compact): ${(Buffer.byteLength(JSON.stringify(compactPicks)) / 1024).toFixed(1)} KB`)
 console.log(`  manifest.json: ${(Buffer.byteLength(JSON.stringify(manifest)) / 1024).toFixed(1)} KB`)
 console.log(`  Total output size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
+console.log(`\nBacktest:`)
+console.log(`  Games analyzed: ${backtestGames.length}`)
+console.log(`  Total picks: ${backtestSummary.totalPicks}`)
+console.log(`  Total picks (20+ prior games): ${backtestSummary.totalPicks20}`)
+console.log(`  In pool: ${backtestSummary.inPool}%`)
+console.log(`  In top 3: ${backtestSummary.inTop3}%`)
+console.log(`  In top 5: ${backtestSummary.inTop5}%`)
+console.log(`  In pool (20+): ${backtestSummary.inPool20}%`)
+console.log(`  In top 3 (20+): ${backtestSummary.inTop320}%`)
+console.log(`  In top 5 (20+): ${backtestSummary.inTop520}%`)
 console.log(`  Run time: ${elapsed}s`)
 console.log(`  Written to: ${outputDir}`)

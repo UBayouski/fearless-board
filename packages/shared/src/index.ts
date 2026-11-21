@@ -207,3 +207,150 @@ export function crediblePool(pool: readonly PoolEntry[], burned: Set<string>): {
 
   return { credible, burned: burnedEntries }
 }
+
+/**
+ * The share of a player's prior games that were on burned champions.
+ *
+ * Returns a value in [0, 100] — the percentage of all prior games spent on
+ * champions that are now burned.  Can never exceed 100% because burned games
+ * are a subset of total games.
+ */
+export function burnedGameShare(pool: readonly PoolEntry[], burned: Set<string>): number {
+  let totalGames = 0
+  let burnedGames = 0
+
+  for (const entry of pool) {
+    totalGames += entry.games
+    if (burned.has(entry.championId)) {
+      burnedGames += entry.games
+    }
+  }
+
+  if (totalGames === 0) return 0
+  return Math.round((burnedGames / totalGames) * 100)
+}
+
+/** Backtest result for a single game. */
+export interface BacktestGame {
+  seriesId: string
+  gameNumber: number
+  /** Per-player results. */
+  players: BacktestPlayer[]
+}
+
+export interface BacktestPlayer {
+  playerId: string
+  playerName: string
+  championId: string
+  /** Whether the pick was in the player's available (credible) pool. */
+  inPool: boolean
+  /** Rank in the credible pool (1-based), or 0 if not in pool. */
+  rank: number
+  /** Total number of prior games for this player. */
+  priorGames: number
+}
+
+/** Backtest summary statistics. */
+export interface BacktestSummary {
+  /** All picks: share that were in the available pool. */
+  inPool: number
+  /** All picks: share that were in top 3. */
+  inTop3: number
+  /** All picks: share that were in top 5. */
+  inTop5: number
+  /** Same three numbers restricted to players with >= 20 prior games. */
+  inPool20: number
+  inTop320: number
+  inTop520: number
+  /** Total picks analyzed. */
+  totalPicks: number
+  /** Total picks from players with >= 20 prior games. */
+  totalPicks20: number
+}
+
+/**
+ * Run a backtest over every game numbered 2 or higher in multi-game series.
+ *
+ * For each pick, checks whether the champion was in the player's credible pool
+ * (available after burning) as of that series, and what rank it held.
+ *
+ * Returns per-game results and an overall summary.
+ */
+export function backtest(
+  seriesList: readonly SeriesDraft[],
+  picks: readonly PickRow[],
+): { games: BacktestGame[]; summary: BacktestSummary } {
+  const games: BacktestGame[] = []
+
+  let totalInPool = 0
+  let totalInTop3 = 0
+  let totalInTop5 = 0
+  let totalPicks = 0
+  let totalInPool20 = 0
+  let totalInTop320 = 0
+  let totalInTop520 = 0
+  let totalPicks20 = 0
+
+  for (const series of seriesList) {
+    if (series.games.length < 2) continue
+
+    for (const game of series.games) {
+      if (game.gameNumber < 2) continue
+
+      const burned = burnedChampions(series.games, game.gameNumber)
+      const playerResults: BacktestPlayer[] = []
+
+      for (const pick of game.picks) {
+        const pool = playerPool(picks, pick.playerId, series.scheduledStart)
+        const { credible } = crediblePool(pool, burned)
+        const rank = credible.findIndex((e) => e.championId === pick.championId) + 1
+        const inPool = rank > 0
+        const priorGames = pool.reduce((sum, e) => sum + e.games, 0)
+
+        playerResults.push({
+          playerId: pick.playerId,
+          playerName: pick.playerName,
+          championId: pick.championId,
+          inPool,
+          rank: inPool ? rank : 0,
+          priorGames,
+        })
+
+        // Count for overall stats
+        totalPicks++
+        if (inPool) totalInPool++
+        if (rank >= 1 && rank <= 3) totalInTop3++
+        if (rank >= 1 && rank <= 5) totalInTop5++
+
+        // Count for >= 20 prior games stats
+        if (priorGames >= 20) {
+          totalPicks20++
+          if (inPool) totalInPool20++
+          if (rank >= 1 && rank <= 3) totalInTop320++
+          if (rank >= 1 && rank <= 5) totalInTop520++
+        }
+      }
+
+      games.push({
+        seriesId: series.seriesId,
+        gameNumber: game.gameNumber,
+        players: playerResults,
+      })
+    }
+  }
+
+  const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0)
+
+  const summary: BacktestSummary = {
+    inPool: pct(totalInPool, totalPicks),
+    inTop3: pct(totalInTop3, totalPicks),
+    inTop5: pct(totalInTop5, totalPicks),
+    inPool20: pct(totalInPool20, totalPicks20),
+    inTop320: pct(totalInTop320, totalPicks20),
+    inTop520: pct(totalInTop520, totalPicks20),
+    totalPicks,
+    totalPicks20,
+  }
+
+  return { games, summary }
+}

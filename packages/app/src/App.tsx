@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   burnedChampions,
+  burnedGameShare,
   crediblePool,
   decodeCompactPicks,
   playerPool,
@@ -394,6 +395,7 @@ function PoolMatrixCell({
   burnedByGame,
   championMap,
   seriesDate,
+  revealedPick,
 }: {
   playerName: string
   role: Role | null
@@ -401,21 +403,29 @@ function PoolMatrixCell({
   burnedByGame: Map<string, number>
   championMap: Map<string, ChampionRef>
   seriesDate: string
+  revealedPick?: { championId: string; rank: number } | null
 }) {
   const totalGames = pool.credible.length + pool.burned.length
   const burnedCount = pool.burned.length
 
-  // Calculate share of prior games on burned champions
-  const burnedGameShare = totalGames > 0
-    ? Math.round((pool.burned.reduce((sum, e) => sum + e.games, 0) / totalGames) * 100)
-    : 0
+  // Calculate share of prior games on burned champions (uses shared function)
+  const allPool: PoolEntry[] = [...pool.credible, ...pool.burned]
+  const burnedSet = new Set(pool.burned.map((e) => e.championId))
+  const share = burnedGameShare(allPool, burnedSet)
 
-  // Calculate weeks since last played relative to series date
-  const weeksAgo = (lastPlayed: string) => {
+  // Format time ago: days under two weeks, weeks after that
+  const timeAgo = (lastPlayed: string) => {
     const diff = Date.parse(seriesDate) - Date.parse(lastPlayed)
-    const weeks = Math.round(diff / (7 * 24 * 60 * 60 * 1000))
-    return weeks
+    const days = Math.round(diff / (24 * 60 * 60 * 1000))
+    if (days < 14) return `${days} d ago`
+    const weeks = Math.round(days / 7)
+    return `${weeks} w ago`
   }
+
+  // Determine if this pick was in the pool
+  const hasReveal = revealedPick !== undefined
+  const isNewPick = revealedPick === null
+  const pickInPool = revealedPick != null && pool.credible.some((e) => e.championId === revealedPick.championId)
 
   return (
     <div className="pool-cell">
@@ -424,17 +434,27 @@ function PoolMatrixCell({
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
       <div className="pool-cell-summary">
-        {pool.credible.length} left · {burnedCount} burned · {burnedGameShare}% of games burned
+        {pool.credible.length} left · {burnedCount} burned · {share}% of games burned
       </div>
+
+      {/* Reveal: show "new" tile if pick wasn't in pool */}
+      {hasReveal && isNewPick && (
+        <div className="pool-cell-section">
+          <span className="champ-tile pool-new">
+            {championMap.get(revealedPick!.championId)?.name ?? revealedPick!.championId} <small>new</small>
+          </span>
+        </div>
+      )}
 
       {pool.credible.length > 0 && (
         <div className="pool-cell-section">
           {pool.credible.map((e) => {
             const champ = championMap.get(e.championId)
-            const weeks = weeksAgo(e.lastPlayed)
+            const ago = timeAgo(e.lastPlayed)
+            const highlighted = hasReveal && pickInPool && revealedPick !== null && e.championId === revealedPick.championId
             return (
-              <span key={e.championId} className="champ-tile pool-available">
-                {champ?.name ?? e.championId} <small>{e.games}g · {weeks}w ago</small>
+              <span key={e.championId} className={`champ-tile pool-available ${highlighted ? 'pool-highlighted' : ''}`}>
+                {champ?.name ?? e.championId} <small>{e.games}g · {ago}{highlighted && revealedPick ? ` · rank #${revealedPick.rank}` : ''}</small>
               </span>
             )
           })}
@@ -471,6 +491,7 @@ function PoolMatrix({
   championMap,
   playerMap,
   gameNumber,
+  revealedGame,
 }: {
   draft: SeriesDraft
   picks: PickRow[]
@@ -478,6 +499,7 @@ function PoolMatrix({
   championMap: Map<string, ChampionRef>
   playerMap: Map<string, PlayerRef>
   gameNumber: number
+  revealedGame?: GameDraft
 }) {
   const burned = burnedChampions(draft.games, gameNumber)
 
@@ -522,44 +544,96 @@ function PoolMatrix({
     return grid
   }, [draft.teamIds, draft.games, playerMap])
 
-  return (
-    <div className="pool-matrix">
-      {/* Header row */}
-      <div className="pool-matrix-header">
-        <div className="pool-matrix-corner"></div>
-        {draft.teamIds.map((teamId) => {
-          const team = teamMap.get(teamId)
-          return <div key={teamId} className="pool-matrix-team-header">{team?.name ?? teamId}</div>
-        })}
-      </div>
+  // Build revealed pick map: playerId → { championId, rank } | null
+  const revealedPickMap = useMemo(() => {
+    if (!revealedGame) return undefined
+    const map = new Map<string, { championId: string; rank: number } | null>()
+    // Group picks by team
+    const picksByTeam = new Map<string, typeof revealedGame.picks>()
+    for (const p of revealedGame.picks) {
+      const list = picksByTeam.get(p.teamId) ?? []
+      list.push(p)
+      picksByTeam.set(p.teamId, list)
+    }
+    for (const teamId of draft.teamIds) {
+      const teamPicks = picksByTeam.get(teamId) ?? []
+      for (const pick of teamPicks) {
+        const player = playerMap.get(pick.playerId)
+        if (!player) continue
+        // Compute rank in player's credible pool
+        const pool = playerPool(picks, player.id, draft.scheduledStart)
+        const { credible } = crediblePool(pool, burned)
+        const rank = credible.findIndex((e) => e.championId === pick.championId) + 1
+        if (rank > 0) {
+          map.set(pick.playerId, { championId: pick.championId, rank })
+        } else {
+          // Pick was not in the credible pool (new champion)
+          map.set(pick.playerId, null)
+        }
+      }
+    }
+    return map
+  }, [revealedGame, picks, draft.scheduledStart, draft.teamIds, playerMap, burned])
 
-      {/* Role rows */}
-      {ROLE_ORDER.map((role) => (
-        <div key={role} className="pool-matrix-row">
-          <div className="pool-matrix-role-label">{role.toUpperCase()}</div>
+  // Compute reveal summary
+  const revealSummary = useMemo(() => {
+    if (!revealedPickMap) return null
+    let inPool = 0
+    let total = 0
+    for (const [, val] of revealedPickMap) {
+      total++
+      if (val !== null) inPool++
+    }
+    return { inPool, total }
+  }, [revealedPickMap])
+
+  return (
+    <>
+      {/* Reveal summary line */}
+      {revealSummary && (
+        <div className="reveal-summary">
+          {revealSummary.inPool} of {revealSummary.total} picks came from the available pools
+        </div>
+      )}
+      <div className="pool-matrix">
+        {/* Header row */}
+        <div className="pool-matrix-header">
+          <div className="pool-matrix-corner"></div>
           {draft.teamIds.map((teamId) => {
-            const player = playerGrid.get(teamId)?.get(role)
-            if (!player) {
-              return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
-            }
-            const pool = playerPool(picks, player.id, draft.scheduledStart)
-            const { credible, burned: burnedEntries } = crediblePool(pool, burned)
-            return (
-              <div key={teamId} className="pool-matrix-cell">
-                <PoolMatrixCell
-                  playerName={player.name}
-                  role={player.role}
-                  pool={{ credible, burned: burnedEntries }}
-                  burnedByGame={burnedByGame}
-                  championMap={championMap}
-                  seriesDate={draft.scheduledStart}
-                />
-              </div>
-            )
+            const team = teamMap.get(teamId)
+            return <div key={teamId} className="pool-matrix-team-header">{team?.name ?? teamId}</div>
           })}
         </div>
-      ))}
-    </div>
+
+        {/* Role rows */}
+        {ROLE_ORDER.map((role) => (
+          <div key={role} className="pool-matrix-row">
+            <div className="pool-matrix-role-label">{role.toUpperCase()}</div>
+            {draft.teamIds.map((teamId) => {
+              const player = playerGrid.get(teamId)?.get(role)
+              if (!player) {
+                return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
+              }
+              const pool = playerPool(picks, player.id, draft.scheduledStart)
+              const { credible, burned: burnedEntries } = crediblePool(pool, burned)
+              return (
+                <div key={teamId} className="pool-matrix-cell">
+                  <PoolMatrixCell
+                    playerName={player.name}
+                    role={player.role}
+                    pool={{ credible, burned: burnedEntries }}
+                    burnedByGame={burnedByGame}
+                    championMap={championMap}
+                    seriesDate={draft.scheduledStart}
+                    revealedPick={revealedPickMap?.get(player.id)}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -589,7 +663,7 @@ function SeriesBoard({
     return draft.games.length
   })()
 
-  // Suppress unused warning — onSelectGame is called below
+  // Suppress unused warning — onSelectGame is used via setHash below
   void onSelectGame
 
   const [revealedGames, setRevealedGames] = useState<Set<number>>(new Set())
@@ -617,15 +691,13 @@ function SeriesBoard({
 
   // Past games (before gameNumber)
   const pastGames = draft.games.filter((g) => g.gameNumber < gameNumber)
-  // Upcoming games (gameNumber and later, not yet revealed)
-  const upcomingGames = draft.games.filter((g) => g.gameNumber >= gameNumber && !revealedGames.has(g.gameNumber))
   // Revealed upcoming games
   const revealedUpcoming = draft.games.filter((g) => g.gameNumber >= gameNumber && revealedGames.has(g.gameNumber))
 
   // playerGrid is built inside PoolMatrix
 
   return (
-    <div className="series-board" key={draft.seriesId}>
+    <div className="series-board">
       <h2>
         {t0?.name ?? draft.teamIds[0]} vs {t1?.name ?? draft.teamIds[1]}
       </h2>
@@ -682,24 +754,46 @@ function SeriesBoard({
         </div>
       )}
 
-      {/* Reveal button for upcoming games */}
-      {upcomingGames.length > 0 && (
-        <div className="reveal-section">
-          {upcomingGames.map((g) => (
-            <button
-              key={g.gameId}
-              className="reveal-btn"
-              onClick={() => {
-                const next = new Set(revealedGames)
-                next.add(g.gameNumber)
-                setRevealedGames(next)
-              }}
-            >
-              Reveal Game {g.gameNumber}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Reveal button: only for the selected game if not yet revealed */}
+      {(() => {
+        const selectedUpcoming = draft.games.find((g) => g.gameNumber === gameNumber && !revealedGames.has(g.gameNumber))
+        if (selectedUpcoming) {
+          return (
+            <div className="reveal-section">
+              <button
+                className="reveal-btn"
+                onClick={() => {
+                  const next = new Set(revealedGames)
+                  next.add(selectedUpcoming.gameNumber)
+                  setRevealedGames(next)
+                }}
+              >
+                Reveal Game {selectedUpcoming.gameNumber}
+              </button>
+            </div>
+          )
+        }
+        // "Next game" button after reveal
+        const revealedSelected = draft.games.find((g) => g.gameNumber === gameNumber && revealedGames.has(g.gameNumber))
+        if (revealedSelected) {
+          const nextGame = draft.games.find((g) => g.gameNumber > gameNumber)
+          if (nextGame) {
+            return (
+              <div className="reveal-section">
+                <button
+                  className="reveal-btn"
+                  onClick={() => {
+                    onSelectGame(nextGame.gameNumber)
+                  }}
+                >
+                  Next game (Game {nextGame.gameNumber})
+                </button>
+              </div>
+            )
+          }
+        }
+        return null
+      })()}
 
       {/* Burned strip (one line above the matrix) */}
       {gameNumber && <BurnedStrip games={draft.games} gameNumber={gameNumber} championMap={championMap} />}
@@ -713,6 +807,7 @@ function SeriesBoard({
           championMap={championMap}
           playerMap={playerMap}
           gameNumber={gameNumber}
+          revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
         />
       )}
     </div>
@@ -854,6 +949,7 @@ function App() {
         <section className="board">
           {selectedSeries && seriesDraft ? (
             <SeriesBoard
+              key={seriesDraft.seriesId}
               draft={seriesDraft}
               picks={load.picks}
               teamMap={load.teamMap}

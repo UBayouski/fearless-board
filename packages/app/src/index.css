@@ -399,8 +399,7 @@ main > h1 {
 }
 
 .compact-history {
-  min-width: 14rem;
-  max-width: 16rem;
+  min-width: 18rem;
   border: 1px solid #ddd;
   border-radius: 6px;
   padding: 0.5rem;
@@ -454,7 +453,8 @@ main > h1 {
 .compact-team-name {
   font-weight: 600;
   font-size: 0.7rem;
-  width: 5rem;
+  min-width: 5rem;
+  max-width: 7rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -465,7 +465,7 @@ main > h1 {
   display: flex;
   gap: 0.2rem;
   flex-wrap: nowrap;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .compact-champ {
@@ -648,4 +648,28 @@ main > h1 {
   color: #ff9800;
   font-style: italic;
   margin-top: 0.3rem;
+}
+
+/* ── Reveal styles ────────────────────────────────────────────── */
+
+.pool-highlighted {
+  background: #fff9c4 !important;
+  border: 2px solid #f9a825 !important;
+  font-weight: 700 !important;
+}
+
+.pool-new {
+  background: #e1bee7 !important;
+  border: 2px solid #8e24aa !important;
+  font-weight: 700 !important;
+}
+
+.reveal-summary {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #e8f5e9;
+  border-radius: 4px;
+  color: #2e7d32;
 }
