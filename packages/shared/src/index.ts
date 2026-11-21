@@ -140,3 +140,70 @@ export function burnedChampions(games: readonly GameDraft[], gameNumber: number)
   }
   return burned
 }
+
+/** A champion entry in a player's pool. */
+export interface PoolEntry {
+  championId: string
+  games: number
+  wins: number
+  lastPlayed: string
+}
+
+/**
+ * Champions a player has played before `asOf` (exclusive), sorted by games desc then recency desc.
+ *
+ * Scans `picks` (all PickRows) for the given player, keeping only games scheduled before `asOf`.
+ */
+export function playerPool(picks: readonly PickRow[], playerId: string, asOf: string): PoolEntry[] {
+  const map = new Map<string, { games: number; wins: number; lastPlayed: string }>()
+
+  for (const row of picks) {
+    if (row.playerId !== playerId) continue
+    if (row.scheduledStart >= asOf) continue
+    const entry = map.get(row.championId)
+    if (!entry) {
+      map.set(row.championId, { games: 1, wins: row.won ? 1 : 0, lastPlayed: row.scheduledStart })
+    } else {
+      entry.games++
+      if (row.won) entry.wins++
+      if (row.scheduledStart > entry.lastPlayed) entry.lastPlayed = row.scheduledStart
+    }
+  }
+
+  const result: PoolEntry[] = []
+  for (const [championId, stats] of map) {
+    result.push({ championId, ...stats })
+  }
+
+  // Sort by games desc, then lastPlayed desc (most recent first)
+  result.sort((a, b) => {
+    if (b.games !== a.games) return b.games - a.games
+    return b.lastPlayed.localeCompare(a.lastPlayed)
+  })
+
+  return result
+}
+
+/**
+ * Split a pool into credible (available) and burned entries.
+ *
+ * Returns `{ credible, burned }` where `credible` contains entries whose champion is not
+ * in `burned`, and `burned` contains the entries that are struck through on the board.
+ */
+export function crediblePool(pool: readonly PoolEntry[], burned: Set<string>): {
+  credible: PoolEntry[]
+  burned: PoolEntry[]
+} {
+  const credible: PoolEntry[] = []
+  const burnedEntries: PoolEntry[] = []
+
+  for (const entry of pool) {
+    if (burned.has(entry.championId)) {
+      burnedEntries.push(entry)
+    } else {
+      credible.push(entry)
+    }
+  }
+
+  return { credible, burned: burnedEntries }
+}
