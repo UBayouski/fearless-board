@@ -1,0 +1,87 @@
+/* ── Pool Matrix Cell ───────────────────────────────────────── */
+
+.pool-cell {
+  padding: 0.5rem 0.75rem;
+}
+
+.pool-cell-empty {
+  padding: 0.5rem 0.75rem;
+  color: #bdbdbd;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 4rem;
+}
+
+.pool-cell-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+
+.pool-cell-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.pool-cell-role {
+  font-size: 0.65rem;
+  color: #757575;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.pool-cell-summary {
+  font-size: 0.75rem;
+  color: #757575;
+  margin-bottom: 0.4rem;
+}
+
+.pool-cell-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.3rem;
+}
+
+.pool-cell-section .champ-tile {
+  font-size: 0.7rem !important;
+}
+
+.pool-cell-section .champ-tile small {
+  color: #757575;
+  font-size: 0.6rem;
+}
+
+.pool-limited-note {
+  font-size: 0.7rem;
+  color: #ff9800;
+  font-style: italic;
+  margin-top: 0.3rem;
+}
+
+/* ── Reveal styles ──────────────────────────────────────────── */
+
+.pool-highlighted {
+  background: #fff9c4 !important;
+  border: 2px solid #f9a825 !important;
+  font-weight: 700 !important;
+}
+
+.pool-new {
+  background: #e1bee7 !important;
+  border: 2px solid #8e24aa !important;
+  font-weight: 700 !important;
+}
+
+.reveal-summary {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #e8f5e9;
+  border-radius: 4px;
+  color: #2e7d32;
+}

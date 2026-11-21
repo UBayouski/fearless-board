@@ -1,0 +1,114 @@
+/* ── Compact History ────────────────────────────────────────── */
+
+.history-row {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.compact-history {
+  min-width: 18rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.compact-history.winner {
+  border-color: #a5d6a7;
+}
+
+.compact-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #eee;
+  font-size: 0.8rem;
+}
+
+.compact-winner {
+  font-size: 0.7rem;
+  color: #2e7d32;
+}
+
+.compact-side {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.2rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: 3px;
+}
+
+.compact-side.blue {
+  background: var(--color-blue-bg);
+}
+
+.compact-side.red {
+  background: var(--color-red-bg);
+}
+
+.compact-side-label {
+  font-weight: 700;
+  font-size: 0.65rem;
+  width: 0.8rem;
+  flex-shrink: 0;
+}
+
+.compact-team-name {
+  font-weight: 600;
+  font-size: 0.7rem;
+  min-width: 5rem;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.compact-picks {
+  display: flex;
+  gap: 0.2rem;
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+
+.compact-champ {
+  font-size: 0.65rem !important;
+  padding: 0.1rem 0.3rem !important;
+  flex-shrink: 0;
+}
+
+.compact-bans {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid #eee;
+}
+
+.compact-ban-team {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-bottom: 0.15rem;
+  flex-wrap: wrap;
+}
+
+.compact-ban-team-label {
+  font-size: 0.65rem;
+  color: #757575;
+  width: 4rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-ban-champ {
+  font-size: 0.6rem !important;
+  padding: 0.05rem 0.25rem !important;
+}
