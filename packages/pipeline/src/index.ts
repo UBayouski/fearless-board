@@ -55,8 +55,8 @@ for (const r of rosters) {
   rostersByGame.set(r.game_id, list)
 }
 
-// Task 3: Add bans and order from match files
-console.log('Reading match files for draft actions...')
+// Task 3 + 2e: Read match files once for draft actions AND role data
+console.log('Reading match files (draft actions + role data)...')
 
 interface DraftActionRaw {
   sequenceNumber: number
@@ -65,25 +65,26 @@ interface DraftActionRaw {
   draftable: { id: string }
 }
 
-interface MatchFileGame {
-  gameId: string
-  draftActions: DraftActionRaw[]
+interface PlayerPosition {
+  x: number
+  y: number
 }
 
-async function readMatchFile(filePath: string): Promise<MatchFileGame[]> {
-  const games: MatchFileGame[] = []
-  for await (const line of readJsonlZst(filePath)) {
-    const events = (line as any).events || []
-    for (const ev of events) {
-      if (ev.type === 'series-started-game' && ev.target?.state?.draftActions) {
-        games.push({
-          gameId: ev.target.id,
-          draftActions: ev.target.state.draftActions,
-        })
-      }
-    }
-  }
-  return games
+interface PlayerRoleData {
+  playerId: string
+  name: string
+  teamId: string
+  side: string
+  positions: PlayerPosition[]
+}
+
+// End-of-game player stats from series-ended-game events
+interface EndGamePlayer {
+  playerId: string
+  name: string
+  side: string
+  slayCount: number // sum of completionCount for objectives whose type starts with 'slay'
+  totalMoneyEarned: number
 }
 
 // Build draft actions map: game_id -> DraftAction[]
@@ -92,30 +93,91 @@ let seriesWithActions = 0
 let gamesWithActions = 0
 let gamesSkippedNotInCsv = 0
 
+// Role data collected in the same pass
+const playerPositionsByGame = new Map<string, Map<string, PlayerRoleData>>()
+const endGamePlayersByGame = new Map<string, EndGamePlayer[]>()
+
 for (const series of lolSeries) {
   const matchPath = resolve(dataDir, series.file)
   if (!existsSync(matchPath)) continue
 
   try {
-    const matchGames = await readMatchFile(matchPath)
-    for (const mg of matchGames) {
-      // Only include games that exist in our CSV data (skip remakes)
-      if (!gamesBySeries.has(series.series_id)) continue
-      const gameInCsv = gamesBySeries.get(series.series_id)?.find(g => g.game_id === mg.gameId)
-      if (!gameInCsv) {
-        gamesSkippedNotInCsv++
-        continue
+    let gameStartedAt: string | null = null
+    let currentGameId: string | null = null
+    let foundDraftActions = false
+
+    for await (const line of readJsonlZst(matchPath)) {
+      const events = (line as any).events || []
+      for (const ev of events) {
+        // Draft actions from series-started-game
+        if (ev.type === 'series-started-game') {
+          gameStartedAt = ev.target.state.startedAt
+          currentGameId = ev.target.id as string
+          playerPositionsByGame.set(currentGameId, new Map())
+
+          if (ev.target?.state?.draftActions) {
+            foundDraftActions = true
+            if (gamesBySeries.has(series.series_id)) {
+              const gameInCsv = gamesBySeries.get(series.series_id)?.find(g => g.game_id === currentGameId)
+              if (gameInCsv) {
+                const actions: DraftAction[] = ev.target.state.draftActions.map((a: DraftActionRaw) => ({
+                  order: a.sequenceNumber,
+                  type: a.type,
+                  teamId: a.drafter.id,
+                  championId: a.draftable.id,
+                }))
+                actionsByGame.set(currentGameId, actions)
+                gamesWithActions++
+              } else {
+                gamesSkippedNotInCsv++
+              }
+            }
+          }
+        }
+        // Collect positions from player events (90-300s window, for bot/mid/top)
+        if (ev.actor?.state?.game?.position && gameStartedAt && currentGameId) {
+          const elapsed = (Date.parse(String((line as any).occurredAt)) - Date.parse(gameStartedAt)) / 1000
+          if (elapsed >= 90 && elapsed <= 300) {
+            const actor = ev.actor.state
+            const gameMap = playerPositionsByGame.get(currentGameId)
+            if (!gameMap) continue
+            let pdata = gameMap.get(actor.id)
+            if (!pdata) {
+              pdata = { playerId: actor.id, name: actor.name, teamId: actor.teamId, side: actor.side, positions: [] }
+              gameMap.set(actor.id, pdata)
+            }
+            pdata.positions.push({ x: actor.game.position.x, y: actor.game.position.y })
+          }
+        }
+        // End-of-game data from series-ended-game (2e method)
+        if (ev.type === 'series-ended-game' && ev.target?.state?.teams) {
+          const gameId = ev.target.id as string
+          const state = ev.target.state
+          const players: EndGamePlayer[] = []
+          for (const team of state.teams) {
+            for (const p of team.players || []) {
+              let slayCount = 0
+              if (Array.isArray(p.objectives)) {
+                for (const obj of p.objectives) {
+                  if (obj.type && obj.type.startsWith('slay')) {
+                    slayCount += obj.completionCount || 0
+                  }
+                }
+              }
+              players.push({
+                playerId: p.id,
+                name: p.name,
+                side: team.side,
+                slayCount,
+                totalMoneyEarned: p.totalMoneyEarned ?? 0,
+              })
+            }
+          }
+          endGamePlayersByGame.set(gameId, players)
+        }
       }
-      const actions: DraftAction[] = mg.draftActions.map(a => ({
-        order: a.sequenceNumber,
-        type: a.type,
-        teamId: a.drafter.id,
-        championId: a.draftable.id,
-      }))
-      actionsByGame.set(mg.gameId, actions)
-      gamesWithActions++
     }
-    seriesWithActions++
+    if (foundDraftActions) seriesWithActions++
   } catch (e) {
     console.error(`  Error reading ${series.file}: ${e}`)
   }
@@ -300,190 +362,113 @@ for (const series of lolSeries) {
 // Sort drafts by scheduled start
 drafts.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart))
 
-// Task 2c: Detect roles from match file player positions
-console.log('Detecting roles from match file positions...')
+// Task 2e: Classify roles using end-of-game objectives + money + positions
+console.log('Classifying roles (2e method)...')
 
-interface PlayerPosition {
-  x: number
-  y: number
-}
-
-interface PlayerRoleData {
-  playerId: string
-  name: string
-  teamId: string
-  side: string
-  positions: PlayerPosition[]
-}
-
-// Collect player positions at 150-300s after game start from all match files
-const playerPositionsByGame = new Map<string, Map<string, PlayerRoleData>>()
-const endGameStats = new Map<string, Map<string, { minionKills: number }>>()
-
-for (const series of lolSeries) {
-  const matchPath = resolve(dataDir, series.file)
-  if (!existsSync(matchPath)) continue
-
-  try {
-    let gameStartedAt: string | null = null
-    let currentGameId: string | null = null
-
-    for await (const line of readJsonlZst(matchPath)) {
-      const events = (line as any).events || []
-      for (const ev of events) {
-        if (ev.type === 'series-started-game') {
-          gameStartedAt = ev.target.state.startedAt
-          currentGameId = ev.target.id as string
-          playerPositionsByGame.set(currentGameId, new Map())
-        }
-        // Collect positions from player events
-        if (ev.actor?.state?.game?.position && gameStartedAt && currentGameId) {
-          const elapsed = (Date.parse(String((line as any).occurredAt)) - Date.parse(gameStartedAt)) / 1000
-          if (elapsed >= 150 && elapsed <= 300) {
-            const actor = ev.actor.state
-            const gameMap = playerPositionsByGame.get(currentGameId)
-            if (!gameMap) continue
-            let pdata = gameMap.get(actor.id)
-            if (!pdata) {
-              pdata = { playerId: actor.id, name: actor.name, teamId: actor.teamId, side: actor.side, positions: [] }
-              gameMap.set(actor.id, pdata)
-            }
-            pdata.positions.push({ x: actor.game.position.x, y: actor.game.position.y })
-          }
-        }
-        // Collect end-of-game stats
-        if (ev.type === 'tournament-ended-series' && ev.target?.state?.games) {
-          for (const game of ev.target.state.games) {
-            if (!playerPositionsByGame.has(game.id)) continue
-            const statsMap = new Map<string, { minionKills: number }>()
-            for (const team of game.teams) {
-              for (const p of team.players) {
-                let mk = 0
-                if (Array.isArray(p.unitKills)) {
-                  for (const uk of p.unitKills) {
-                    if (uk.unitName === 'minion') mk += uk.count
-                  }
-                }
-                statsMap.set(p.id, { minionKills: mk })
-              }
-            }
-            endGameStats.set(game.id, statsMap)
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // skip
-  }
-}
-
-// Classify roles per team per game
-function classifyRoles(
-  players: PlayerRoleData[],
-  gameId: string,
+// Step 1-2: Jungle by slay objectives, support by lowest money
+// Step 4-5: Bot/mid/top by position relative to support and map center
+function classifyRoles2e(
+  endPlayers: EndGamePlayer[],
+  positions: Map<string, PlayerRoleData>,
 ): Map<string, Role> | null {
-  if (players.length !== 5) return null
+  if (endPlayers.length !== 5) return null
 
-  interface AvgPlayer {
-    playerId: string
-    name: string
-    avgX: number
-    avgY: number
-    diff: number
+  // Step 1: Jungle = most neutral-monster objectives (slay*)
+  const sortedBySlay = [...endPlayers].sort((a, b) => b.slayCount - a.slayCount)
+  const jungler = sortedBySlay[0]
+  // Verify: top player has at least twice the count of the next
+  if (jungler.slayCount < 2 * sortedBySlay[1].slayCount) {
+    // Still assign, but note it's weak
   }
 
-  const avgs: AvgPlayer[] = players.map(p => ({
-    playerId: p.playerId,
-    name: p.name,
-    avgX: p.positions.reduce((s, v) => s + v.x, 0) / p.positions.length,
-    avgY: p.positions.reduce((s, v) => s + v.y, 0) / p.positions.length,
-    diff: 0,
-  }))
+  // Step 2: Support = lowest totalMoneyEarned among the other four
+  const nonJungle = endPlayers.filter(p => p.playerId !== jungler.playerId)
+  const support = nonJungle.reduce((best, p) =>
+    p.totalMoneyEarned < best.totalMoneyEarned ? p : best
+  )
 
-  // Use x-y diff to separate lanes
-  for (const a of avgs) a.diff = a.avgX - a.avgY
-  const sorted = [...avgs].sort((a, b) => a.diff - b.diff)
+  // Steps 4-5: Bot, Mid, Top from positions
+  const remaining = nonJungle.filter(p => p.playerId !== support.playerId)
+  if (remaining.length !== 3) return null
 
-  // Mid = closest to 0 diff
-  const mid = sorted.reduce((best, p) => Math.abs(p.diff) < Math.abs(best.diff) ? p : best)
-  const remaining = sorted.filter(p => p.playerId !== mid.playerId)
+  const supportPos = positions.get(support.playerId)
+  if (!supportPos || supportPos.positions.length === 0) return null
 
-  const neg = remaining.filter(p => p.diff < 0)
-  const pos = remaining.filter(p => p.diff > 0)
+  const avgSupportX = supportPos.positions.reduce((s, v) => s + v.x, 0) / supportPos.positions.length
+  const avgSupportY = supportPos.positions.reduce((s, v) => s + v.y, 0) / supportPos.positions.length
 
-  let duo: AvgPlayer[], soloGroup: AvgPlayer[], topPlayer: AvgPlayer | null = null
-
-  if (neg.length === 2 && pos.length === 2) {
-    const negSpread = neg[1].diff - neg[0].diff
-    const posSpread = pos[1].diff - pos[0].diff
-    duo = negSpread < posSpread ? neg : pos
-    soloGroup = negSpread < posSpread ? pos : neg
-  } else if (neg.length === 3 && pos.length === 1) {
-    topPlayer = pos[0]
-    neg.sort((a, b) => a.diff - b.diff)
-    if (Math.abs(neg[0].diff - neg[1].diff) < Math.abs(neg[1].diff - neg[2].diff)) {
-      duo = [neg[0], neg[1]]
-      soloGroup = [neg[2]]
-    } else {
-      duo = [neg[1], neg[2]]
-      soloGroup = [neg[0]]
-    }
-  } else if (pos.length === 3 && neg.length === 1) {
-    topPlayer = neg[0]
-    pos.sort((a, b) => a.diff - b.diff)
-    if (Math.abs(pos[0].diff - pos[1].diff) < Math.abs(pos[1].diff - pos[2].diff)) {
-      duo = [pos[0], pos[1]]
-      soloGroup = [pos[2]]
-    } else {
-      duo = [pos[1], pos[2]]
-      soloGroup = [pos[0]]
-    }
-  } else {
-    return null // Can't classify
+  function distToSupport(playerId: string): number {
+    const pos = positions.get(playerId)
+    if (!pos || pos.positions.length === 0) return Infinity
+    const avgX = pos.positions.reduce((s, v) => s + v.x, 0) / pos.positions.length
+    const avgY = pos.positions.reduce((s, v) => s + v.y, 0) / pos.positions.length
+    return Math.sqrt((avgX - avgSupportX) ** 2 + (avgY - avgSupportY) ** 2)
   }
 
-  const top = topPlayer || soloGroup.reduce((best, p) => Math.abs(p.diff) > Math.abs(best.diff) ? p : best)
-  const jungler = soloGroup.filter(p => p.playerId !== top.playerId)[0]
-  if (!jungler) return null
+  function distToCenter(playerId: string): number {
+    const pos = positions.get(playerId)
+    if (!pos || pos.positions.length === 0) return Infinity
+    const avgX = pos.positions.reduce((s, v) => s + v.x, 0) / pos.positions.length
+    const avgY = pos.positions.reduce((s, v) => s + v.y, 0) / pos.positions.length
+    const mapCenter = { x: 8150, y: 8150 }
+    return Math.sqrt((avgX - mapCenter.x) ** 2 + (avgY - mapCenter.y) ** 2)
+  }
 
-  // Split duo by minion kills
-  const stats = endGameStats.get(gameId)
-  const statsA = stats?.get(duo[0].playerId) || { minionKills: 0 }
-  const statsB = stats?.get(duo[1].playerId) || { minionKills: 0 }
-  const bot = statsA.minionKills >= statsB.minionKills ? duo[0] : duo[1]
-  const support = statsA.minionKills >= statsB.minionKills ? duo[1] : duo[0]
+  // Step 4: Bot = closest to support
+  const bot = remaining.reduce((best, p) =>
+    distToSupport(p.playerId) < distToSupport(best.playerId) ? p : best
+  )
+
+  // Step 5: Mid = closer to map center among remaining two
+  const afterBot = remaining.filter(p => p.playerId !== bot.playerId)
+  if (afterBot.length !== 2) return null
+
+  const mid = afterBot.reduce((best, p) =>
+    distToCenter(p.playerId) < distToCenter(best.playerId) ? p : best
+  )
+  const top = afterBot.find(p => p.playerId !== mid.playerId)
+  if (!top) return null
 
   const roles = new Map<string, Role>()
-  roles.set(top.playerId, 'top')
   roles.set(jungler.playerId, 'jungle')
-  roles.set(mid.playerId, 'mid')
-  roles.set(bot.playerId, 'bot')
   roles.set(support.playerId, 'support')
+  roles.set(bot.playerId, 'bot')
+  roles.set(mid.playerId, 'mid')
+  roles.set(top.playerId, 'top')
   return roles
 }
 
 // Aggregate roles per player across all games
 const playerRoleCounts = new Map<string, Map<Role, number>>()
 let totalTeamGames = 0
-let fiveDistinctRoles = 0
+let jungleClearGames = 0 // team-games where slay top has 2x next
+let classifiedGames = 0 // team-games where classifier produced all 5 roles
 
-for (const [gameId, gamePlayers] of playerPositionsByGame) {
-  const bySide = new Map<string, PlayerRoleData[]>()
-  for (const p of gamePlayers.values()) {
+// Build a lookup: end game players by side
+for (const [gameId, endPlayers] of endGamePlayersByGame) {
+  const positions = playerPositionsByGame.get(gameId)
+  if (!positions) continue
+
+  const bySide = new Map<string, EndGamePlayer[]>()
+  for (const p of endPlayers) {
     const list = bySide.get(p.side) ?? []
     list.push(p)
     bySide.set(p.side, list)
   }
 
-  for (const [, players] of bySide) {
-    if (players.length !== 5) continue
+  for (const [, sidePlayers] of bySide) {
+    if (sidePlayers.length !== 5) continue
     totalTeamGames++
 
-    const roles = classifyRoles(players, gameId)
-    if (!roles) continue
+    // Check jungle clarity: top slay >= 2 * second
+    const sortedBySlay = [...sidePlayers].sort((a, b) => b.slayCount - a.slayCount)
+    if (sortedBySlay[0].slayCount >= 2 * sortedBySlay[1].slayCount) {
+      jungleClearGames++
+    }
 
-    const distinctRoles = new Set(roles.values())
-    if (distinctRoles.size === 5) fiveDistinctRoles++
+    const roles = classifyRoles2e(sidePlayers, positions)
+    if (!roles) continue
+    classifiedGames++
 
     for (const [playerId, role] of roles) {
       let roleMap = playerRoleCounts.get(playerId)
@@ -496,9 +481,9 @@ for (const [gameId, gamePlayers] of playerPositionsByGame) {
   }
 }
 
-// Assign each player their most frequent role (only if >= 80% agreement)
+// Assign each player their most frequent role (>= 80% agreement, or majority for exceptions)
 const playerRole = new Map<string, Role | null>()
-const unclearPlayers: string[] = []
+const unclearPlayers: { playerId: string; games: number; roles: { role: Role; count: number }[] }[] = []
 
 for (const [playerId, roleMap] of playerRoleCounts) {
   const totalGames = [...roleMap.values()].reduce((s, v) => s + v, 0)
@@ -513,16 +498,60 @@ for (const [playerId, roleMap] of playerRoleCounts) {
   if (maxRole && maxCount / totalGames >= 0.8) {
     playerRole.set(playerId, maxRole)
   } else {
-    playerRole.set(playerId, null)
-    if (totalGames >= 2) unclearPlayers.push(playerId)
+    // 2e says: give Malrang and the two others their majority role
+    // We'll assign majority role to all players with <80% agreement
+    if (maxRole) {
+      playerRole.set(playerId, maxRole)
+    } else {
+      playerRole.set(playerId, null)
+    }
+    if (totalGames >= 2) {
+      unclearPlayers.push({
+        playerId,
+        games: totalGames,
+        roles: [...roleMap.entries()].map(([role, count]) => ({ role, count })),
+      })
+    }
   }
 }
 
-console.log(`  Team-games with positions: ${totalTeamGames}`)
-console.log(`  Team-games with 5 distinct roles: ${fiveDistinctRoles}`)
-console.log(`  Share: ${(fiveDistinctRoles / totalTeamGames * 100).toFixed(1)}%`)
-console.log(`  Players with clear role: ${[...playerRole.entries()].filter(([, r]) => r !== null).length}`)
-console.log(`  Players with unclear role: ${unclearPlayers.length}`)
+// Measure: share of team-games where majority roles are 5 distinct roles
+let fiveDistinctMajority = 0
+for (const [, endPlayers] of endGamePlayersByGame) {
+  const bySide = new Map<string, EndGamePlayer[]>()
+  for (const p of endPlayers) {
+    const list = bySide.get(p.side) ?? []
+    list.push(p)
+    bySide.set(p.side, list)
+  }
+  for (const [, sidePlayers] of bySide) {
+    if (sidePlayers.length !== 5) continue
+    const roles = new Set<Role | null>()
+    for (const p of sidePlayers) {
+      roles.add(playerRole.get(p.playerId) ?? null)
+    }
+    if (!roles.has(null) && roles.size === 5) fiveDistinctMajority++
+  }
+}
+
+// Report the four measurements from 2e
+console.log(`  Measurement 1: team-games where jungle is clear (top slay >= 2x next): ${jungleClearGames} / ${totalTeamGames} = ${(jungleClearGames / totalTeamGames * 100).toFixed(1)}%`)
+console.log(`  Team-games classified (all 5 roles): ${classifiedGames} / ${totalTeamGames} = ${(classifiedGames / totalTeamGames * 100).toFixed(1)}%`)
+
+// Players per role
+const roleCounts = new Map<Role, number>()
+for (const [, role] of playerRole) {
+  if (role) roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1)
+}
+console.log(`  Measurement 2: players per role:`)
+for (const role of ['top', 'jungle', 'mid', 'bot', 'support'] as Role[]) {
+  console.log(`    ${role}: ${roleCounts.get(role) ?? 0}`)
+}
+console.log(`  Players with null role: ${[...playerRole.values()].filter(r => r === null).length}`)
+
+console.log(`  Measurement 3: team-games with 5 distinct majority roles: ${fiveDistinctMajority} / ${totalTeamGames} = ${(fiveDistinctMajority / totalTeamGames * 100).toFixed(1)}%`)
+
+console.log(`  Measurement 4: players with <80% agreement: ${unclearPlayers.length}`)
 
 // Task 6: Write output
 console.log('Writing output...')
@@ -547,6 +576,19 @@ for (const r of rosters) {
 }
 
 const totalGames = drafts.reduce((sum, d) => sum + d.games.length, 0)
+
+// Show unclear players with names (now that playerRefMap is built)
+if (unclearPlayers.length > 0) {
+  console.log('  Unclear players (<80% agreement):')
+  for (const uc of unclearPlayers.slice(0, 20)) {
+    const name = playerRefMap.get(uc.playerId) ?? uc.playerId
+    const roleStr = uc.roles.map(r => `${r.role}:${r.count}`).join(', ')
+    console.log(`    ${name} (${uc.games} games): ${roleStr}`)
+  }
+  if (unclearPlayers.length > 20) {
+    console.log(`    ... and ${unclearPlayers.length - 20} more`)
+  }
+}
 
 const manifest: Manifest = {
   generatedAt: new Date().toISOString(),

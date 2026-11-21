@@ -119,6 +119,36 @@ Measure it properly:
 Also: the pipeline now takes 283 s. Read each match file once for both drafts and roles, and report the new
 run time.
 
+### 2e. Roles, verified method (replaces 2c and 2d)
+
+Result of 2d: 97 players unassigned and only 3.6% of team-games with five distinct roles. Two assumptions in
+2d were wrong: jungle pet items never appear as purchases in the data, and `World Atlas` is bought in only
+73.5% of team-games. Remove the item-based code.
+
+The method below was run over all 745 match files (3,461 team-games) before being written here. It uses only
+the end-of-game state: the `seriesState` inside each `series-ended-game` event, for the game in `target.id`.
+
+1. **Jungle:** the player with the most neutral-monster objectives. Sum `completionCount` over the player's
+   `objectives` whose `type` starts with `slay`. In 3,393 of 3,461 team-games the top player has at least
+   twice the count of the next one.
+2. **Support:** of the other four, the player with the lowest `totalMoneyEarned`. Where exactly one player
+   bought `World Atlas`, this picks the same player in 2,542 of 2,544 team-games.
+3. Take each player's majority label over all their games. Result: 279 of 282 players have 80% agreement or
+   more (57 jungle, 54 support, 168 other). The three exceptions are Zelt (4 games), BlindWalker (4 games)
+   and Malrang (37 games: 27 jungle, 10 support, a real role change). Give Malrang and the two others their
+   majority role.
+
+Still to do, for the 168 other players (top, mid, bot):
+
+4. **Bot:** of the three, the one closest on average to their team's support between 90 s and 300 s of game
+   time (positions from `seriesState` snapshots, as in 2c).
+5. **Mid:** of the remaining two, the one closer to the centre of the map in that window. **Top:** the last.
+6. Majority label per player, as above.
+
+Report: players per role (expect about 56 each), the share of team-games where the five majority roles are
+distinct (target 95%), and players under 80% agreement with their game counts. Keep reading each match file
+only once, and report the run time.
+
 ### 3. Shared logic, with tests
 
 In `packages/shared`, pure functions with `node:test` cases:
