@@ -3,6 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "scripts": { "start": "node src/index.ts" },
-  "dependencies": { "@fearless-board/shared": "workspace:*" }
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts"
+  },
+  "dependencies": {
+    "@fearless-board/shared": "workspace:*",
+    "papaparse": "^5.7.1"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.5.2"
+  }
 }
