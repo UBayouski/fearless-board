@@ -1,0 +1,36 @@
+# Dependencies and build output
+node_modules
+dist
+dist-ssr
+*.local
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# JetBrains: .idea and .air are committed on purpose (evidence of tool use).
+# Only per-user files are ignored.
+.idea/workspace.xml
+.idea/shelf/
+.idea/usage.statistics.xml
+.idea/httpRequests/
+.idea/dataSources/
+.idea/dataSources.local.xml
+
+# Other editors
+.vscode/*
+!.vscode/extensions.json
+
+# Sky's The Limit 2026 hackathon data: licensed, must not be committed
+stl-hackathon-2026-grid-starter/
+*.zst
+*.jsonl
+*.parquet
+*.sqlite
+*.duckdb
+
+# Aggregates built from the data by `pnpm data`. Kept out of git; deployed with the demo build only.
+packages/app/public/data/
+.cache/

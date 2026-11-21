@@ -1,0 +1,22 @@
+{
+  "name": "fearless-board",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Series-long League of Legends draft planner for Fearless Draft.",
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --filter @fearless-board/app dev",
+    "build": "pnpm --filter @fearless-board/app build",
+    "data": "pnpm --filter @fearless-board/pipeline start",
+    "test": "node --test \"packages/*/src/**/*.test.ts\"",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/pipeline && pnpm --filter @fearless-board/app exec tsc -b",
+    "check:data": "node scripts/check-no-data.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~7.0.2"
+  }
+}
