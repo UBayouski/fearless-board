@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { ChampionRef, GameDraft, GamePlan, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import type { ChampionRef, GameDraft, GamePlan, GamePlanPlayer, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import { PoolMatrixCell } from './PoolMatrixCell'
 import './PoolMatrix.css'
 
@@ -60,6 +60,42 @@ export function PoolMatrix({
     return { byPlayer, inPool, total: byPlayer.size }
   }, [revealedGame, players, plan.unknownRolePlayers])
 
+
+  const cellClass = (teamId: string) => {
+    const isOtherTeam = draftMode && currentDraftSlot?.type === 'p' && currentDraftSlot.teamId !== teamId
+    return isOtherTeam ? 'pool-matrix-cell pool-matrix-other-team' : 'pool-matrix-cell'
+  }
+
+  const renderPlayer = (teamId: string, gp: GamePlanPlayer) => {
+    const hasPicked = draftConditioned?.pickedPlayers.has(gp.playerId) ?? false
+    const isPickingPlayer = draftMode && currentDraftSlot?.type === 'p'
+      && currentDraftSlot.teamId === teamId && !hasPicked
+    return (
+      <PoolMatrixCell
+        key={gp.playerId}
+        teamName={teamMap.get(teamId)?.name ?? teamId}
+        playerName={gp.playerName}
+        playerId={gp.playerId}
+        role={gp.role}
+        pool={gp.pool}
+        burnedByGame={burnedByGame}
+        championMap={championMap}
+        seriesDate={draft.scheduledStart}
+        revealedPick={reveal?.byPlayer.get(gp.playerId)}
+        likelihoods={gp.likelihoods}
+        priorGames={gp.priorGames}
+        substitute={gp.substitute}
+        isPickingPlayer={isPickingPlayer}
+        onPick={isPickingPlayer ? onPick : undefined}
+        unavailable={draftMode ? draftConditioned?.unavailable : undefined}
+        hasPicked={hasPicked}
+        pickedChampionId={draftConditioned?.pickedChampions.get(gp.playerId)}
+        lastRemoved={removedForPlayers?.has(gp.playerId) ? lastRemoved : undefined}
+        replayRank={replayPickRanks?.get(gp.playerId)}
+      />
+    )
+  }
+
   return (
     <>
       {reveal && (
@@ -92,38 +128,9 @@ export function PoolMatrix({
               if (!gp) {
                 return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
               }
-              // In draft mode, plan already has conditioned likelihoods (from liveGamePlan)
-              const isPickingPlayer = draftMode && currentDraftSlot?.type === 'p'
-                && currentDraftSlot?.teamId === teamId
-                && !draftConditioned?.pickedPlayers.has(gp.playerId)
-              const playerHasPicked = draftConditioned?.pickedPlayers.has(gp.playerId) ?? false
-              const pickedChampionId = draftConditioned?.pickedChampions.get(gp.playerId)
-              const replayRank = replayPickRanks?.get(gp.playerId) ?? undefined
-              // 2.5: On a pick turn, dim the other team's column
-              const isOtherTeam = draftMode && currentDraftSlot?.type === 'p' && currentDraftSlot?.teamId !== teamId
               return (
-                <div key={teamId} className={`pool-matrix-cell ${isOtherTeam ? 'pool-matrix-other-team' : ''}`}>
-                  <PoolMatrixCell
-                    teamName={teamMap.get(teamId)?.name ?? teamId}
-                    playerName={gp.playerName}
-                    playerId={gp.playerId}
-                    role={gp.role}
-                    pool={gp.pool}
-                    burnedByGame={burnedByGame}
-                    championMap={championMap}
-                    seriesDate={draft.scheduledStart}
-                    revealedPick={reveal?.byPlayer.get(gp.playerId)}
-                    likelihoods={gp.likelihoods}
-                    priorGames={gp.priorGames}
-                    substitute={gp.substitute}
-                    isPickingPlayer={isPickingPlayer}
-                    onPick={isPickingPlayer ? onPick : undefined}
-                    unavailable={draftMode ? draftConditioned?.unavailable : undefined}
-                    hasPicked={playerHasPicked}
-                    pickedChampionId={pickedChampionId}
-                    lastRemoved={removedForPlayers?.has(gp.playerId) ? lastRemoved : undefined}
-                    replayRank={replayRank}
-                  />
+                <div key={teamId} className={cellClass(teamId)}>
+                  {renderPlayer(teamId, gp)}
                 </div>
               )
             })}
@@ -143,24 +150,8 @@ export function PoolMatrix({
                   return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
                 }
                 return (
-                  <div key={teamId} className="pool-matrix-cell">
-                    {unknownGps.map((gp) => (
-                      <PoolMatrixCell
-                        key={gp.playerId}
-                        teamName={teamMap.get(teamId)?.name ?? teamId}
-                        playerName={gp.playerName}
-                        playerId={gp.playerId}
-                        role={null}
-                        pool={gp.pool}
-                        burnedByGame={burnedByGame}
-                        championMap={championMap}
-                        seriesDate={draft.scheduledStart}
-                        revealedPick={reveal?.byPlayer.get(gp.playerId)}
-                        likelihoods={gp.likelihoods}
-                        priorGames={gp.priorGames}
-                        substitute={gp.substitute}
-                      />
-                    ))}
+                  <div key={teamId} className={cellClass(teamId)}>
+                    {unknownGps.map(gp => renderPlayer(teamId, gp))}
                   </div>
                 )
               })}

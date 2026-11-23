@@ -564,7 +564,10 @@ export function SeriesBoard({
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
           onBan={draftMode && currentDraftSlot?.type === 'b' ? handleBan : undefined}
           actingTeamId={draftMode && currentDraftSlot?.type === 'b' ? currentDraftSlot.teamId : undefined}
-          onSelectChampion={setCostChampion}
+          onSelectChampion={(championId) => {
+            setCostChampion(championId)
+            if (draftMode) setBriefingExpanded(true)
+          }}
         />
       )}
 
