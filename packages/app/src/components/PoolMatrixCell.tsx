@@ -77,6 +77,8 @@ function roleLabel(role: Role | null): string {
   return role ?? '?'
 }
 
+export const PLANNING_PICKS = 5
+
 export function PoolMatrixCell({
   playerName,
   teamName,
@@ -186,7 +188,7 @@ export function PoolMatrixCell({
 
   // For "Also played" collapsible
   const [showTen, setShowTen] = useState(false)
-  const visiblePicks = top10.filter((entry, i) => isPickingPlayer || showTen || i < 3 || entry.championId === revealedChampId)
+  const visiblePicks = top10.filter((entry, i) => isPickingPlayer || showTen || i < PLANNING_PICKS || entry.championId === revealedChampId)
   const [expanded, setExpanded] = useState(false)
 
   // Max probability for comfort bar
@@ -315,9 +317,9 @@ export function PoolMatrixCell({
       )}
 
       {/* ── 6.2.3: Last removed champion — struck tile for one step ── */}
-      {!isPickingPlayer && top10.length > 3 && (
+      {!isPickingPlayer && top10.length > PLANNING_PICKS && (
         <button type="button" className="also-played-toggle" aria-expanded={showTen} onClick={() => setShowTen(!showTen)}>
-          {showTen ? 'Show top 3' : `Show top ${top10.length}`}
+          {showTen ? `Show top ${PLANNING_PICKS}` : `Show top ${top10.length}`}
         </button>
       )}
       {lastRemoved && (

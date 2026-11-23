@@ -384,3 +384,9 @@
   .game-stepper { width: 100%; flex-wrap: nowrap; }
   .game-stepper button { flex: 1; padding: .4rem .1rem; }
 }
+
+.planning-guide {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}

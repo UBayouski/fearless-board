@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
 import type { ChampionRef, GameDraft, GamePlan, GamePlanPlayer, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
-import { PoolMatrixCell } from './PoolMatrixCell'
+import { PLANNING_PICKS, PoolMatrixCell } from './PoolMatrixCell'
 import './PoolMatrix.css'
 
 const ROLE_ORDER: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
 
 export function PoolMatrix({
   plan,
+  forecastPlan = plan,
   draft,
   teamMap,
   championMap,
@@ -22,6 +23,7 @@ export function PoolMatrix({
   actingTeamId,
 }: {
   plan: GamePlan
+  forecastPlan?: GamePlan
   draft: SeriesDraft
   teamMap: Map<string, TeamRef>
   championMap: Map<string, ChampionRef>
@@ -45,20 +47,26 @@ export function PoolMatrix({
   const reveal = useMemo(() => {
     if (!revealedGame) return undefined
     const lineup = [
-      ...players.flatMap(([, roles]) => Array.from(roles.values())),
-      ...plan.unknownRolePlayers.flatMap(([, group]) => group),
+      ...forecastPlan.players.flatMap(([, roles]) => Array.from(roles.values())),
+      ...forecastPlan.unknownRolePlayers.flatMap(([, group]) => group),
     ]
     const byPlayer = new Map<string, { championId: string; rank: number }>()
     let inPool = 0
+    let forecastCount = 0
+    let topFive = 0
     for (const pick of revealedGame.picks) {
       const player = lineup.find(p => p.playerId === pick.playerId)
       if (!player) continue
       const rank = player.likelihoods.findIndex(l => l.championId === pick.championId) + 1
+      if (player.likelihoods.length > 0) {
+        forecastCount++
+        if (rank > 0 && rank <= PLANNING_PICKS) topFive++
+      }
       byPlayer.set(player.playerId, { championId: pick.championId, rank })
       if (player.pool.credible.some(c => c.championId === pick.championId)) inPool++
     }
-    return { byPlayer, inPool, total: byPlayer.size }
-  }, [revealedGame, players, plan.unknownRolePlayers])
+    return { byPlayer, inPool, total: byPlayer.size, forecastCount, topFive, actualCount: revealedGame.picks.length }
+  }, [revealedGame, forecastPlan])
 
 
   const cellClass = (teamId: string) => {
@@ -100,7 +108,12 @@ export function PoolMatrix({
     <>
       {reveal && (
         <div className="reveal-summary">
-          {reveal.inPool} of {reveal.total} picks came from the available pools
+          <span>{reveal.inPool} of {reveal.total} picks came from the available pools</span>
+          {reveal.forecastCount > 0 && (
+            <span>
+              {reveal.topFive} of {reveal.forecastCount} picks{reveal.forecastCount < reveal.actualCount ? ' with a forecast' : ''} were in the model’s top five
+            </span>
+          )}
         </div>
       )}
       <div className="pool-matrix">

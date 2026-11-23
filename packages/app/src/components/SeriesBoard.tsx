@@ -432,6 +432,9 @@ export function SeriesBoard({
           </p>
         )}
       </div>
+      {!draftMode && !revealedGames.has(gameNumber) && plan && (
+        <p className="planning-guide">See what each player can still pick, then reveal the real draft to compare.</p>
+      )}
       <div className="game-controls">
       <div className="game-stepper">
         {draft.games.map((g) => (
@@ -454,7 +457,7 @@ export function SeriesBoard({
           return (
             <div className="reveal-section">
               <button
-                className="draft-btn-inline"
+                className={draftMode ? 'draft-btn-inline' : 'reveal-btn'}
                 onClick={() => {
                   const next = new Set(revealedGames)
                   next.add(selectedUpcoming.gameNumber)
@@ -465,7 +468,7 @@ export function SeriesBoard({
               </button>
               {!draftMode && (
                 <button
-                  className="reveal-btn"
+                  className="draft-btn-inline"
                   onClick={() => setDraftMode(true)}
                 >
                   Draft Game {selectedUpcoming.gameNumber}
@@ -577,6 +580,7 @@ export function SeriesBoard({
       {gameNumber && usedPlan && (
         <PoolMatrix
           plan={usedPlan}
+          forecastPlan={plan ?? undefined}
           draft={draft}
           teamMap={teamMap}
           championMap={championMap}
