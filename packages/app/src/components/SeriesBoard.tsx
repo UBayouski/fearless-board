@@ -7,6 +7,7 @@ import { CompactHistoryCard } from './CompactHistoryCard'
 import { GameColumn } from './GameColumn'
 import { DraftBar } from './DraftBar'
 import { LeveragePanel } from './LeveragePanel'
+import { OutlookPanel } from './OutlookPanel'
 import { PoolMatrix } from './PoolMatrix'
 import './SeriesBoard.css'
 
@@ -27,6 +28,7 @@ export function SeriesBoard({
   backtestStats,
   model: propModel,
   initialSession, // for tests only
+  initialCostChampion, // for tests only
 }: {
   draft: SeriesDraft
   picks: PickRow[]
@@ -46,6 +48,8 @@ export function SeriesBoard({
   model?: PickModel
   /** Optional initial draft session (for tests only). */
   initialSession?: DraftSession
+  /** Optional champion preselected for "What does a pick cost?" (for tests only). */
+  initialCostChampion?: string
 }) {
   const gameNumber = selectedGame ?? (() => {
     if (draft.games.length >= 3) return 3
@@ -60,6 +64,9 @@ export function SeriesBoard({
 
   // 6.2.5: Replay confirmation — ask once before starting
   const [replayConfirm, setReplayConfirm] = useState(false)
+
+  // Champion chosen for "What does a pick cost?" (set from the outlook search or a denial row)
+  const [costChampion, setCostChampion] = useState<string | null>(initialCostChampion ?? null)
 
   // Get the game for this game number
   const currentGame = draft.games.find(g => g.gameNumber === gameNumber)
@@ -442,6 +449,19 @@ export function SeriesBoard({
         />
       )}
 
+      {/* ── Series outlook panel ──────────────────────────── */}
+      {gameNumber && usedPlan && (
+        <OutlookPanel
+          plan={usedPlan}
+          draft={draft}
+          teamMap={teamMap}
+          championMap={championMap}
+          selectedChampion={costChampion}
+          onSelectChampion={setCostChampion}
+          unavailable={draftConditioned?.unavailable ?? usedPlan.burned}
+        />
+      )}
+
       {/* ── Pool matrix (first, within 300px) ─────────────── */}
       {gameNumber && usedPlan && (
         <PoolMatrix
@@ -471,6 +491,7 @@ export function SeriesBoard({
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
           onBan={draftMode && currentDraftSlot?.type === 'b' ? handleBan : undefined}
           actingTeamId={draftMode && currentDraftSlot?.type === 'b' ? currentDraftSlot.teamId : undefined}
+          onSelectChampion={setCostChampion}
         />
       )}
 

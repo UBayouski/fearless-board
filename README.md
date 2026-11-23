@@ -115,6 +115,19 @@ Leverage finds 26.6% of real bans in its top 8 against 21.1% for the plain 45-da
 
 **Limits:** The backtest ranks champions for the player who actually picked; during a real draft the board does not know which role a team fills next, so all open players' lists are shown.
 
+**Series outlook** shows how much of each player's likely picks is already burned across the series, and what the coming game is expected to burn. A "what does a pick cost" search shows, per team, which players lose probability mass from a chosen champion and the combined figure. The panel also projects how much more each player's pool will shrink from the coming game.
+
+**Series outlook backtest** on 2026+ games (players with 20+ earlier games):
+
+| Game | Picks | Mean burned share | Pick outside top 10 |
+|---|---|---|---|
+| 2 | 1,224 | 19.8% | 20.4% |
+| 3 | 731 | 36.8% | 29.7% |
+| 4 | 165 | 48.4% | 32.1% |
+| 5 | 66 | 63.8% | 51.5% |
+
+**Projection** of the coming game's burn (3,848 player-games): mean predicted 21.6%, mean actual 21.8%; mean absolute error 8.1 points against 8.8 for a constant. The burned share describes how much of a player's usual picks is gone; in this data it does not predict who wins.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE). The licence covers this code only, not the match data.

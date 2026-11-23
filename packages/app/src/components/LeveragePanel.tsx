@@ -9,6 +9,7 @@ export function LeveragePanel({
   revealedGame,
   onBan,
   actingTeamId,
+  onSelectChampion,
 }: {
   plan: GamePlan
   draft: SeriesDraft
@@ -19,6 +20,8 @@ export function LeveragePanel({
   onBan?: (championId: string) => void
   /** The team acting on a ban turn (6.2.1). */
   actingTeamId?: string
+  /** Called when a row in "Picks that also deny" is clicked: shows that champion's cost in the outlook. */
+  onSelectChampion?: (championId: string) => void
 }) {
   const { leverage, players } = plan
 
@@ -152,7 +155,13 @@ export function LeveragePanel({
                     ? entry.opponentHits.map((h) => `${h.playerName} ${Math.round(h.probability * 100)}%`).join(' · ')
                     : `${Math.round(entry.threatFromOpponent * 100)}%`
                   return (
-                    <div key={entry.championId} className="leverage-row">
+                    <button
+                      key={entry.championId}
+                      type="button"
+                      className={`leverage-row ${onSelectChampion ? 'leverage-row-clickable' : ''}`}
+                      onClick={onSelectChampion ? () => onSelectChampion(entry.championId) : undefined}
+                      aria-label={`${champ?.name ?? entry.championId}, show what this pick costs both teams`}
+                    >
                       <div className="leverage-row-left">
                         <span className="leverage-champ-name">{champ?.name ?? entry.championId}</span>
                         {isPicked && <span className="leverage-label-picked">picked</span>}
@@ -160,7 +169,7 @@ export function LeveragePanel({
                       <span className="leverage-detail">
                         you: {entry.ownPlayerName} {Math.round(entry.ownProbability * 100)}% ({entry.gamesPlayed} g) · them: {themStr}
                       </span>
-                    </div>
+                    </button>
                   )
                 })}
               </div>

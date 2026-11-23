@@ -1,0 +1,213 @@
+.outlook-panel {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.outlook-panel-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.outlook-panel-explanation {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+/* ── Grid ─────────────────────────────────────── */
+
+.outlook-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 900px) {
+  .outlook-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.outlook-team-column {
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.75rem;
+}
+
+.outlook-team-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+/* ── Role rows ────────────────────────────────── */
+
+.outlook-role-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.outlook-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.outlook-player-name {
+  min-width: 7rem;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.outlook-bar-container {
+  flex: 1;
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.outlook-bar {
+  height: 100%;
+  background: var(--ember);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+.outlook-burned-pct {
+  color: var(--ember);
+  font-size: 0.75rem;
+  min-width: 4.5rem;
+  text-align: right;
+  font-family: 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.outlook-expected {
+  color: var(--muted);
+  font-size: 0.75rem;
+  min-width: 6rem;
+  text-align: right;
+}
+
+.outlook-limited {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  min-width: 6rem;
+  text-align: right;
+}
+
+/* ── Team line ────────────────────────────────── */
+
+.outlook-team-line {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.outlook-team-mean {
+  color: var(--text);
+}
+
+.outlook-deepest {
+  color: var(--ember);
+}
+
+/* ── Pick cost ────────────────────────────────── */
+
+.outlook-pick-cost {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.outlook-pick-cost-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.outlook-pick-cost-explanation {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+
+.outlook-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.outlook-clear-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.outlook-clear-btn:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
+.outlook-cost-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.outlook-cost-team {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.outlook-cost-team-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.outlook-cost-player {
+  color: var(--ember);
+  font-size: 0.8rem;
+}
+
+.outlook-cost-none {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.8rem;
+}
+
+.outlook-cost-combined {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.outlook-cost-champion {
+  font-size: 0.8rem;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}

@@ -418,6 +418,51 @@ export function threat(
 }
 
 /**
+ * Build ban leverage and denial picks for one team.
+ * Shared by gamePlan (model.ts) and liveGamePlan (draft.ts) to avoid duplication.
+ */
+export function buildTeamLeverage(
+  ownPlayersData: Map<Role, GamePlanPlayer>,
+  oppPlayersData: Map<Role, GamePlanPlayer>,
+  _ownUnknownRole: Map<Role, GamePlanPlayer>,
+  _oppUnknownRole: Map<Role, GamePlanPlayer>,
+  availableChampions: Set<string>,
+  _allPlayers: [string, Map<Role, GamePlanPlayer>][],
+): GamePlanTeamLeverage | null {
+  const roleOrder: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
+
+  const ownPlayerLikelihoods = roleOrder.map(r => ownPlayersData.get(r)?.likelihoods ?? [])
+  const oppPlayerLikelihoods = roleOrder.map(r => oppPlayersData.get(r)?.likelihoods ?? [])
+
+  const ownPlayers: PlayerRef[] = roleOrder.map(r => {
+    const gp = ownPlayersData.get(r)
+    return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
+  })
+  const oppPlayers: PlayerRef[] = roleOrder.map(r => {
+    const gp = oppPlayersData.get(r)
+    return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
+  })
+
+  // Build player pools for denial picks
+  const ownPlayerPools = new Map<string, Map<string, number>>()
+  for (const [, gp] of ownPlayersData) {
+    const champGames = new Map<string, number>()
+    for (const entry of gp.pool.credible) {
+      champGames.set(entry.championId, entry.games)
+    }
+    for (const entry of gp.pool.burned) {
+      champGames.set(entry.championId, entry.games)
+    }
+    ownPlayerPools.set(gp.playerId, champGames)
+  }
+
+  const leverageEntries = banLeverage(oppPlayerLikelihoods, ownPlayerLikelihoods, oppPlayers, ownPlayers, availableChampions)
+  const denialEntries = denialPicks(ownPlayerLikelihoods, oppPlayerLikelihoods, ownPlayers, oppPlayers, availableChampions, ownPlayerPools)
+
+  return { leverage: leverageEntries, denial: denialEntries }
+}
+
+/**
  * Ban leverage for team A against team B.
  */
 export function banLeverage(
@@ -701,48 +746,17 @@ export function gamePlan(
 
   // Build leverage for each team
   const leverage = new Map<string, GamePlanTeamLeverage>()
-
   for (const teamId of draft.teamIds) {
     const oppTeamId = draft.teamIds.find(t => t !== teamId)
     if (!oppTeamId) continue
-
-    // Look up both teams by ID
     const ownPlayersData = players.find(([tid]) => tid === teamId)?.[1]
     const oppPlayersData = players.find(([tid]) => tid === oppTeamId)?.[1]
     if (!ownPlayersData || !oppPlayersData) continue
-
-    // Collect players in role order
-    const roleOrder: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
-
-    const ownPlayerLikelihoods = roleOrder.map(r => ownPlayersData.get(r)?.likelihoods ?? [])
-    const oppPlayerLikelihoods = roleOrder.map(r => oppPlayersData.get(r)?.likelihoods ?? [])
-
-    const ownPlayers: PlayerRef[] = roleOrder.map(r => {
-      const gp = ownPlayersData.get(r)
-      return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
-    })
-    const oppPlayers: PlayerRef[] = roleOrder.map(r => {
-      const gp = oppPlayersData.get(r)
-      return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
-    })
-
-    // Build player pools for denial picks
-    const ownPlayerPools = new Map<string, Map<string, number>>()
-    for (const [, gp] of ownPlayersData) {
-      const champGames = new Map<string, number>()
-      for (const entry of gp.pool.credible) {
-        champGames.set(entry.championId, entry.games)
-      }
-      for (const entry of gp.pool.burned) {
-        champGames.set(entry.championId, entry.games)
-      }
-      ownPlayerPools.set(gp.playerId, champGames)
-    }
-
-    const leverageEntries = banLeverage(oppPlayerLikelihoods, ownPlayerLikelihoods, oppPlayers, ownPlayers, availableChampions)
-    const denialEntries = denialPicks(ownPlayerLikelihoods, oppPlayerLikelihoods, ownPlayers, oppPlayers, availableChampions, ownPlayerPools)
-
-    leverage.set(teamId, { leverage: leverageEntries, denial: denialEntries })
+    const entry = buildTeamLeverage(
+      ownPlayersData, oppPlayersData, ownPlayersData, oppPlayersData,
+      availableChampions, players,
+    )
+    if (entry) leverage.set(teamId, entry)
   }
 
   return {

@@ -2,9 +2,9 @@
 
 import type {
   DraftActionInput, GamePlan, GamePlanPlayer, GamePlanTeamLeverage,
-  PlayerRef, Role,
+  Role,
 } from './types.ts'
-import { DRAFT_ORDER, conditionLikelihoods, banLeverage, denialPicks } from './model.ts'
+import { DRAFT_ORDER, conditionLikelihoods, buildTeamLeverage } from './model.ts'
 
 // ── Draft Session ────────────────────────────────────────────────────
 
@@ -205,7 +205,6 @@ export function liveGamePlan(
 
   // Recompute leverage for each team
   const newLeverage = new Map<string, GamePlanTeamLeverage>()
-  const roleOrder: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
   const teamIds = plan.players.map(([tid]) => tid)
 
   for (const teamId of teamIds) {
@@ -216,31 +215,11 @@ export function liveGamePlan(
     const oppPlayersData = newPlayers.find(([tid]) => tid === oppTeamId)?.[1]
     if (!ownPlayersData || !oppPlayersData) continue
 
-    const ownPlayerLikelihoods = roleOrder.map(r => ownPlayersData.get(r)?.likelihoods ?? [])
-    const oppPlayerLikelihoods = roleOrder.map(r => oppPlayersData.get(r)?.likelihoods ?? [])
-
-    const ownPlayers: PlayerRef[] = roleOrder.map(r => {
-      const gp = ownPlayersData.get(r)
-      return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
-    })
-    const oppPlayers: PlayerRef[] = roleOrder.map(r => {
-      const gp = oppPlayersData.get(r)
-      return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
-    })
-
-    // Build player pools for denial picks
-    const ownPlayerPools = new Map<string, Map<string, number>>()
-    for (const [, gp] of ownPlayersData) {
-      const champGames = new Map<string, number>()
-      for (const entry of gp.pool.credible) champGames.set(entry.championId, entry.games)
-      for (const entry of gp.pool.burned) champGames.set(entry.championId, entry.games)
-      ownPlayerPools.set(gp.playerId, champGames)
-    }
-
-    const leverageEntries = banLeverage(oppPlayerLikelihoods, ownPlayerLikelihoods, oppPlayers, ownPlayers, plan.availableChampions)
-    const denialEntries = denialPicks(ownPlayerLikelihoods, oppPlayerLikelihoods, ownPlayers, oppPlayers, plan.availableChampions, ownPlayerPools)
-
-    newLeverage.set(teamId, { leverage: leverageEntries, denial: denialEntries })
+    const entry = buildTeamLeverage(
+      ownPlayersData, oppPlayersData, ownPlayersData, oppPlayersData,
+      plan.availableChampions, newPlayers,
+    )
+    if (entry) newLeverage.set(teamId, entry)
   }
 
   // 6.2.3: Track the last removed champion for one-step visibility

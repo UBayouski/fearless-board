@@ -426,4 +426,83 @@ describe('SeriesBoard render', () => {
     expect(html).toContain('draft-slot')
     expect(html).not.toContain('NaN')
   })
+
+  it('outlook: panel shows ten player names and burned shares', async () => {
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {}, model,
+    })
+    const html = await renderToString(el)
+
+    // Panel title
+    expect(html).toContain('Series outlook')
+
+    // Ten player names
+    const playerNames = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
+    for (const name of playerNames) {
+      expect(html).toContain(`Player ${name}`)
+    }
+
+    // Burned share labels
+    expect(html).toMatch(/\d+% burned/u)
+
+    // No NaN or undefined
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('outlook: game 1 shows 0% burned', async () => {
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 1, onSelectGame: () => {}, model,
+    })
+    const html = await renderToString(el)
+
+    // Game 1 has no burned champions, so all burned shares are 0%
+    expect(html).toContain('0% burned')
+    expect(html).not.toContain('NaN')
+  })
+
+  it('outlook: pick cost shows both team figures', async () => {
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {}, model, initialCostChampion: 'c2',
+    })
+    const html = await renderToString(el)
+
+    // Pick cost section exists, with the chosen champion and a combined figure for each team
+    expect(html).toContain('What does a pick cost')
+    expect(html).toContain('outlook-cost-champion')
+    expect(html.match(/combined <!-- -->\d+%/gu)?.length ?? html.match(/combined \d+%/gu)?.length).toBe(2)
+
+    // Both team names appear in the panel
+    expect(html).toContain('Team Alpha')
+    expect(html).toContain('Team Beta')
+    expect(html).not.toContain('NaN')
+  })
+
+  it('outlook: draft mode uses live plan', async () => {
+    // Session with 1 ban — outlook panel should still render with live plan
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+    })
+    const html = await renderToString(el)
+
+    // Outlook panel renders in draft mode
+    expect(html).toContain('Series outlook')
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
 })
