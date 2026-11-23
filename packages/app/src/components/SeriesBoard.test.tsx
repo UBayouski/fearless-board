@@ -531,12 +531,13 @@ describe('SeriesBoard render', () => {
     expect(html).not.toContain('undefined')
   })
 
-  it('note: shows headline and three point titles for first team', async () => {
+  it('note: shows headline and three point titles for the selected team', async () => {
     const notesData = {
       model: 'test-model',
       games: {
         '2': {
-          'tA': {
+          'tA': { headline: 'Opponent-only note', points: [] },
+          'tB': {
             headline: 'Ten champions are gone entering game two',
             points: [
               { title: 'Their pools', text: 'Every opponent player has lost 0% of their usual picks.' },
@@ -563,7 +564,8 @@ describe('SeriesBoard render', () => {
     // Attribution line (React server rendering inserts <!-- --> between expressions)
     // The model id is shown as a name
     expect(html).toMatch(/Written by (?:<!-- -->)?Test Model(?:<!-- -->)? from the figures/u)
-    // Team switch buttons
+    expect(html).not.toContain('Opponent-only note')
+    // Both team names are on the page
     expect(html).toContain('Team Alpha')
     expect(html).toContain('Team Beta')
     expect(html).not.toContain('NaN')

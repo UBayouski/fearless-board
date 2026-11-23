@@ -222,3 +222,8 @@
     border-bottom: none;
   }
 }
+
+.leverage-panel-grid.single-team { grid-template-columns: 1fr; }
+@media (min-width: 760px) {
+  .single-team .leverage-sections { grid-template-columns: 1fr 1fr; }
+}

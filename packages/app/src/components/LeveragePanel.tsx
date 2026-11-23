@@ -12,6 +12,7 @@ export function LeveragePanel({
   revealedGame,
   onBan,
   actingTeamId,
+  focusedTeamId,
   onSelectChampion,
 }: {
   plan: GamePlan
@@ -23,9 +24,12 @@ export function LeveragePanel({
   onBan?: (championId: string) => void
   /** The team acting on a ban turn (6.2.1). */
   actingTeamId?: string
+  /** When given, only this team's column is shown. */
+  focusedTeamId?: string
   /** Called when a row in "Picks that also deny" is clicked: shows that champion's cost in the outlook. */
   onSelectChampion?: (championId: string) => void
 }) {
+  const teamIds = focusedTeamId ? [focusedTeamId] : draft.teamIds
   const { leverage, players } = plan
   const [expanded, setExpanded] = useState(false)
 
@@ -75,8 +79,8 @@ export function LeveragePanel({
           {expanded ? 'show fewer' : 'show all'}
         </button>
       </div>
-      <div className={`leverage-panel-grid ${!expanded ? 'leverage-collapsed' : ''}`}>
-        {draft.teamIds.map((teamId) => {
+      <div className={`leverage-panel-grid ${focusedTeamId ? 'single-team' : ''} ${!expanded ? 'leverage-collapsed' : ''}`}>
+        {teamIds.map((teamId) => {
           const teamLeverage = leverage.get(teamId)
           if (!teamLeverage) return null
           const { leverage: leverageEntries, denial } = teamLeverage

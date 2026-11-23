@@ -279,3 +279,49 @@
     position: static;
   }
 }
+
+@media (max-width: 600px) {
+  .draft-bar {
+    position: sticky;
+    padding: 0.45rem 0.5rem;
+  }
+  .draft-bar-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem 0.5rem;
+  }
+  .draft-controls {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .draft-ban-entry, .draft-first-team {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .draft-first-team:has(button:disabled) {
+    display: none;
+  }
+  .draft-team-row:not(.draft-phase-labels) {
+    display: grid;
+    grid-template-columns: minmax(0, 5rem) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .draft-team-row-label {
+    width: auto;
+    text-align: left;
+  }
+  .draft-team-slots {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .draft-phase { display: contents; }
+  .draft-slot { display: none; }
+  .draft-slot-filled, .draft-slot-current {
+    display: flex;
+    width: 100%;
+    padding-inline: 0.2rem;
+    font-size: 0.68rem;
+  }
+}

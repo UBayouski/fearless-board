@@ -15,6 +15,7 @@ import './SeriesBoard.css'
 
 // 2.4: Briefing content — collapsed or expanded
 function BriefingContent({
+  perspective,
   draftActive,
   onExpand,
   onCollapse,
@@ -29,6 +30,7 @@ function BriefingContent({
   unavailable,
   draftMode,
 }: {
+  perspective: string
   draftActive: boolean
   onExpand: () => void
   /** Given while a draft is running, so the opened briefing can be hidden again. */
@@ -63,7 +65,7 @@ function BriefingContent({
           )}
           {notesData && (
             <NoteBlock
-              draft={draft}
+              teamId={perspective}
               teamMap={teamMap}
               notesData={notesData}
               gameNumber={gameNumber}
@@ -321,7 +323,6 @@ export function SeriesBoard({
 
   const planningTeam = perspective ?? session.firstTeamId
   const ban = plan?.leverage.get(planningTeam)?.leverage[0]
-  const target = ban?.opponentHits.reduce((best, hit) => hit.probability > best.probability ? hit : best, ban.opponentHits[0])
   const t0 = teamMap.get(draft.teamIds[0])
   const t1 = teamMap.get(draft.teamIds[1])
   const name0 = t0?.name ?? draft.teamIds[0]
@@ -349,12 +350,31 @@ export function SeriesBoard({
 
   const maxGames = draft.games.length
 
+  const briefing = gameNumber && usedPlan && (
+    <BriefingContent
+      perspective={planningTeam}
+      draftActive={draftMode && !briefingExpanded}
+      onExpand={() => setBriefingExpanded(true)}
+      onCollapse={draftMode ? () => setBriefingExpanded(false) : undefined}
+      notesData={notesData}
+      draft={draft}
+      teamMap={teamMap}
+      plan={usedPlan}
+      championMap={championMap}
+      gameNumber={gameNumber}
+      selectedChampion={costChampion}
+      onSelectChampion={setCostChampion}
+      unavailable={draftConditioned?.unavailable ?? usedPlan.burned}
+      draftMode={draftMode && session.actions.length > 0}
+    />
+  )
+
   return (
     <div className="series-board">
       {/* ── Header: team names, score pips, sides ─────────── */}
       <div className="series-header">
         <div className="series-teams-display">
-          <span className="team-name display">{name0}</span>
+          <span className="team-name display">{name0}<span className="mobile-score">{score.score0}</span></span>
           <div className="score-pips">
             {Array.from({ length: maxGames }, (_, i) => {
               // Filled only for games before the selected one
@@ -374,7 +394,7 @@ export function SeriesBoard({
               return <div key={i} className={`pip ${won ? 'filled' : ''}`} />
             })}
           </div>
-          <span className="team-name display">{name1}</span>
+          <span className="team-name display">{name1}<span className="mobile-score">{score.score1}</span></span>
         </div>
         <p className="series-info">
           {gameSides && (
@@ -395,19 +415,23 @@ export function SeriesBoard({
       </div>
 
       {/* ── Game buttons and reveal / draft buttons, one row ─ */}
-      {!draftMode && !revealedGames.has(gameNumber) && plan && (
-        <section className="decision-card" aria-label="Ban recommendation">
-          <label>Ban outlook for <select value={planningTeam} onChange={e => setPerspective(e.target.value)}>
-            {draft.teamIds.map(id => <option key={id} value={id}>{teamMap.get(id)?.name ?? id}</option>)}
-          </select></label>
-          {ban && Math.round(ban.leverage * 100) > 2 ? <>
-            <h2>Consider banning {championMap.get(ban.championId)?.name ?? ban.championId}</h2>
-            <p>Opponent pick likelihood <strong>{Math.round(ban.threatFromOpponent * 100)}%</strong>
-              {target && <> · {target.playerName} {Math.round(target.probability * 100)}%</>}
-              {' · '}Your team <strong>{Math.round(ban.threatFromOwn * 100)}%</strong></p>
-          </> : <h2>No ban stands out.</h2>}
-        </section>
-      )}
+      <div className="decision-card">
+        <div className="perspective-switch" role="group" aria-label="Planning team">
+          <span>Planning for</span>
+          {draft.teamIds.map(id => (
+            <button key={id} type="button" aria-pressed={planningTeam === id} onClick={() => setPerspective(id)}>
+              {teamMap.get(id)?.name ?? id}
+            </button>
+          ))}
+        </div>
+        {!draftMode && !revealedGames.has(gameNumber) && ban && Math.round(ban.leverage * 100) > 2 && (
+          <p>
+            Ban option <strong>{championMap.get(ban.championId)?.name ?? ban.championId}</strong>
+            {' · '}Opponent {Math.round(ban.threatFromOpponent * 100)}%
+            {' · '}Your team {Math.round(ban.threatFromOwn * 100)}%
+          </p>
+        )}
+      </div>
       <div className="game-controls">
       <div className="game-stepper">
         {draft.games.map((g) => (
@@ -525,27 +549,14 @@ export function SeriesBoard({
       )}
 
       {/* ── 2.4: Briefing row — collapses in draft mode ─── */}
-      {gameNumber && usedPlan && (
-        <BriefingContent
-          draftActive={draftMode && session.actions.length > 0 && !briefingExpanded}
-          onExpand={() => setBriefingExpanded(true)}
-          onCollapse={draftMode && session.actions.length > 0 ? () => setBriefingExpanded(false) : undefined}
-          notesData={notesData}
-          draft={draft}
-          teamMap={teamMap}
-          plan={usedPlan}
-          championMap={championMap}
-          gameNumber={gameNumber}
-          selectedChampion={costChampion}
-          onSelectChampion={setCostChampion}
-          unavailable={draftConditioned?.unavailable ?? usedPlan.burned}
-          draftMode={draftMode && session.actions.length > 0}
-        />
-      )}
+      {!draftMode && briefing}
 
       {/* ── 6: Ban panel above matrix, collapsed ───────────── */}
       {gameNumber && usedPlan && (
         <LeveragePanel
+          focusedTeamId={draftMode
+            ? currentDraftSlot?.type === 'b' ? currentDraftSlot.teamId : undefined
+            : !revealedGames.has(gameNumber) ? planningTeam : undefined}
           plan={usedPlan}
           draft={draft}
           teamMap={teamMap}
@@ -556,6 +567,8 @@ export function SeriesBoard({
           onSelectChampion={setCostChampion}
         />
       )}
+
+      {draftMode && briefing}
 
       {/* ── Pool matrix ────────────────────────────────────── */}
       {gameNumber && usedPlan && (
