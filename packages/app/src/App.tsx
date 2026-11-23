@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SeriesDraft } from '@fearless-board/shared'
+import type { SeriesDraft, WrittenNote } from '@fearless-board/shared'
 import type { Load } from './data'
 import { loadAll } from './data'
 import { parseHash, setHash } from './route'
 import { SeriesPicker } from './components/SeriesPicker'
 import { SeriesBoard } from './components/SeriesBoard'
 import './index.css'
+
+// 3.5: Load notes only if manifest says notes exist
+async function loadNotes(seriesId: string, manifestNotes?: { model: string; count: number }) {
+  if (!manifestNotes) return null
+  try {
+    const r = await fetch(`${import.meta.env.BASE_URL}data/notes/${seriesId}.json`)
+    if (!r.ok) return null
+    const data = await r.json() as { model: string; promptVersion: number; games: Record<string, Record<string, WrittenNote>> }
+    return { model: data.model, games: data.games }
+  } catch {
+    return null
+  }
+}
 
 // 6: Load backtest stats for the footer
 async function loadBacktest() {
@@ -36,10 +49,18 @@ function App() {
     gamesPlayedTop5?: number
     gamesPlayedTop10?: number
   } | null>(null)
+  const [notesData, setNotesData] = useState<{ model: string; games: Record<string, Record<string, WrittenNote>> } | null>(null)
+  const [manifestNotes, setManifestNotes] = useState<{ model: string; count: number } | undefined>(undefined)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    loadAll().then(setLoad)
+    loadAll().then((l) => {
+      setLoad(l)
+      // 3.5: Check if manifest says notes exist
+      if (l.state === 'ready') {
+        setManifestNotes(l.manifest.notes)
+      }
+    })
     loadBacktest().then((bt) => {
       if (bt?.summary) {
         // 3: Use the "games 2+" group for reliability numbers
@@ -66,6 +87,21 @@ function App() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [panelOpen])
+
+  // 3.5: Load notes for the selected series; clear when series changes
+  const prevSeriesRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevSeriesRef.current !== selectedSeries) {
+      prevSeriesRef.current = selectedSeries
+      setNotesData(null)
+    }
+    if (!selectedSeries || !manifestNotes) return
+    let cancelled = false
+    loadNotes(selectedSeries, manifestNotes).then((data) => {
+      if (!cancelled) setNotesData(data)
+    })
+    return () => { cancelled = true }
+  }, [selectedSeries, manifestNotes])
 
   // 6: Restore from URL hash on load and on hashchange; default to most recent best-of-five
   useEffect(() => {
@@ -224,6 +260,7 @@ function App() {
             selectedGame={selectedGame}
             onSelectGame={(gn) => selectGame(selectedSeries, gn)}
             backtestStats={backtestStats ?? undefined}
+            notesData={notesData ?? undefined}
           />
         ) : selectedSeries && seriesError ? (
           <p>Error loading series: {seriesError}</p>

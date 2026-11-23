@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import type { ChampionRef, GamePlan, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import { useMemo, useState } from 'react'
+import type { ChampionRef, GamePlan, SeriesDraft, TeamRef, WrittenNote } from '@fearless-board/shared'
 import { seriesOutlook, pickCost, type OutlookPlayer } from '@fearless-board/shared'
 import { ChampionSearch } from './PoolMatrixCell'
 import './OutlookPanel.css'
@@ -18,6 +18,9 @@ export function OutlookPanel({
   selectedChampion: searchChampion,
   onSelectChampion: setSearchChampion,
   unavailable,
+  notesData,
+  gameNumber,
+  draftMode,
 }: {
   plan: GamePlan
   draft: SeriesDraft
@@ -28,8 +31,25 @@ export function OutlookPanel({
   onSelectChampion: (championId: string | null) => void
   /** Champions that cannot be picked any more: burned, and banned or picked in the current draft. */
   unavailable: Set<string>
+  /** Optional notes data for this series. */
+  notesData?: { model: string; games: Record<string, Record<string, WrittenNote>> }
+  /** Current game number. */
+  gameNumber: number
+  /** Whether draft mode is active. */
+  draftMode: boolean
 }) {
   const outlook = useMemo(() => seriesOutlook(plan), [plan])
+
+  // 3.1: Pre-game note — switch between teams (matrix order)
+  const [noteTeamIdx, setNoteTeamIdx] = useState(0)
+  const noteForGame = notesData?.games[String(gameNumber)]
+  // 3.4: No note, no block — game 1, no notes data, or failed check
+  // If the selected team has no note (its check failed), show the other team's
+  const shownIdx = noteForGame?.[draft.teamIds[noteTeamIdx]] ? noteTeamIdx : 1 - noteTeamIdx
+  const note: WrittenNote | undefined = noteForGame?.[draft.teamIds[shownIdx]]
+  const noteModel = notesData?.model
+  // 3.3: In draft mode, dim with "written before this draft"
+  const noteIsDimmed = draftMode && note
 
   // Pick cost for selected champion
   const costResult = useMemo(() => {
@@ -59,6 +79,46 @@ export function OutlookPanel({
 
   return (
     <div className="outlook-panel">
+      {/* 3.1-3.4: Pre-game note block — only when a note exists */}
+      {note && (
+        <div className={`outlook-note ${noteIsDimmed ? 'outlook-note-dimmed' : ''}`}>
+          <div className="outlook-note-header">
+            <span className="outlook-note-label">Pre-game note</span>
+            <div className="outlook-note-switch">
+              {draft.teamIds.map((teamId, idx) => {
+                const teamName = teamMap.get(teamId)?.name ?? teamId
+                const hasNote = !!noteForGame?.[teamId]
+                return (
+                  <button
+                    key={teamId}
+                    type="button"
+                    className={`outlook-note-team-btn ${idx === shownIdx ? 'selected' : ''} ${!hasNote ? 'disabled' : ''}`}
+                    onClick={() => hasNote && setNoteTeamIdx(idx)}
+                    disabled={!hasNote}
+                  >
+                    {teamName}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div className="outlook-note-headline">{note.headline}</div>
+          {note.points.map((point, idx) => (
+            <div key={idx} className="outlook-note-point">
+              <div className="outlook-note-point-title">{point.title}</div>
+              <div className="outlook-note-point-text">{point.text}</div>
+            </div>
+          ))}
+          {/* 3.2: Attribution line */}
+          <div className="outlook-note-attribution">
+            Written by {noteModel} from the figures on this board. Every champion and percentage in it was checked against them.
+          </div>
+          {noteIsDimmed && (
+            <div className="outlook-note-draft-label">written before this draft</div>
+          )}
+        </div>
+      )}
+
       <div className="outlook-panel-title">Series outlook</div>
       <div className="outlook-panel-explanation">
         How much of each player's likely picks is already burned, and what the coming game is expected to burn.

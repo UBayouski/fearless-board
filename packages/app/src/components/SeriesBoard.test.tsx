@@ -505,4 +505,55 @@ describe('SeriesBoard render', () => {
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('undefined')
   })
+
+  it('note: shows headline and three point titles for first team', async () => {
+    const notesData = {
+      model: 'test-model',
+      games: {
+        '2': {
+          'tA': {
+            headline: 'Ten champions are gone entering game two',
+            points: [
+              { title: 'Their pools', text: 'Every opponent player has lost 0% of their usual picks.' },
+              { title: 'Our pools', text: 'All our players have lost 0% of their usual picks.' },
+              { title: 'Bans and picks', text: 'The list of bans to consider is empty.' },
+            ],
+          },
+        },
+      },
+    }
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {}, model, notesData,
+    })
+    const html = await renderToString(el)
+
+    // Note block renders
+    expect(html).toContain('Pre-game note')
+    expect(html).toContain('Ten champions are gone entering game two')
+    expect(html).toContain('Their pools')
+    expect(html).toContain('Our pools')
+    expect(html).toContain('Bans and picks')
+    // Attribution line (React server rendering inserts <!-- --> between expressions)
+    expect(html).toMatch(/Written by <!-- -->*test-model<!-- -->* from the figures/u)
+    // Team switch buttons
+    expect(html).toContain('Team Alpha')
+    expect(html).toContain('Team Beta')
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('note: no note shows no block', async () => {
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {}, model,
+    })
+    const html = await renderToString(el)
+
+    // No note block when no notes data
+    expect(html).not.toContain('Pre-game note')
+    expect(html).not.toContain('outlook-note')
+    expect(html).not.toContain('NaN')
+  })
 })

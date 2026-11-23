@@ -197,83 +197,60 @@ function buildPlayerFacts(
   for (const role of roleOrder) {
     const gp = roleMap.get(role)
     if (!gp) continue
-
-    const outlookPlayer = outlookTeam?.players.find((p: OutlookPlayer) => p.playerId === gp.playerId)
-    const burnedShare = outlookPlayer?.burnedShare ?? 0
-
-    // Up to 3 burned champions highest in startLikelihoods
-    const usualPicksAlreadyGone: string[] = []
-    for (const l of gp.startLikelihoods) {
-      if (plan.burned.has(l.championId)) {
-        usualPicksAlreadyGone.push(names.champion(l.championId))
-        if (usualPicksAlreadyGone.length >= 3) break
-      }
-    }
-
-    // Up to 3 likely picks now (from current likelihoods)
-    const likelyPicksNow: { champion: string; likelihoodPct: number; gamesPlayed: number }[] = []
-    for (const l of gp.likelihoods) {
-      const poolEntry = gp.pool.credible.find((pe: { championId: string; games: number }) => pe.championId === l.championId)
-      likelyPicksNow.push({
-        champion: names.champion(l.championId),
-        likelihoodPct: Math.round(l.probability * 100),
-        gamesPlayed: poolEntry?.games ?? 0,
-      })
-      if (likelyPicksNow.length >= 3) break
-    }
-
-    const pf: NotePlayerFacts = {
-      player: gp.playerName,
-      role: gp.role,
-      usualPicksAlreadyGonePct: Math.round(burnedShare * 100),
-      usualPicksAlreadyGone,
-      likelyPicksNow,
-    }
-    if (gp.priorGames < 20) {
-      pf.limitedHistory = true
-    }
-    result.push(pf)
+    result.push(buildOnePlayerFacts(plan, outlookTeam, names, gp))
   }
 
   // Unknown role players
   const unknownList = plan.unknownRolePlayers.find(([tid]) => tid === teamId)?.[1] ?? []
   for (const gp of unknownList) {
-    const outlookPlayer = outlookTeam?.players.find((p: OutlookPlayer) => p.playerId === gp.playerId)
-    const burnedShare = outlookPlayer?.burnedShare ?? 0
-
-    const usualPicksAlreadyGone: string[] = []
-    for (const l of gp.startLikelihoods) {
-      if (plan.burned.has(l.championId)) {
-        usualPicksAlreadyGone.push(names.champion(l.championId))
-        if (usualPicksAlreadyGone.length >= 3) break
-      }
-    }
-
-    const likelyPicksNow: { champion: string; likelihoodPct: number; gamesPlayed: number }[] = []
-    for (const l of gp.likelihoods) {
-      const poolEntry = gp.pool.credible.find((pe: { championId: string; games: number }) => pe.championId === l.championId)
-      likelyPicksNow.push({
-        champion: names.champion(l.championId),
-        likelihoodPct: Math.round(l.probability * 100),
-        gamesPlayed: poolEntry?.games ?? 0,
-      })
-      if (likelyPicksNow.length >= 3) break
-    }
-
-    const pf: NotePlayerFacts = {
-      player: gp.playerName,
-      role: null,
-      usualPicksAlreadyGonePct: Math.round(burnedShare * 100),
-      usualPicksAlreadyGone,
-      likelyPicksNow,
-    }
-    if (gp.priorGames < 20) {
-      pf.limitedHistory = true
-    }
-    result.push(pf)
+    result.push(buildOnePlayerFacts(plan, outlookTeam, names, gp))
   }
 
   return result
+}
+
+/** Build facts for one player (shared by role and unknown-role paths). */
+function buildOnePlayerFacts(
+  plan: GamePlan,
+  outlookTeam: { teamId: string; players: OutlookPlayer[] } | undefined,
+  names: NoteNames,
+  gp: { playerId: string; playerName: string; role: string | null; priorGames: number; startLikelihoods: { championId: string }[]; likelihoods: { championId: string; probability: number }[]; pool: { credible: { championId: string; games: number }[] } },
+): NotePlayerFacts {
+  const outlookPlayer = outlookTeam?.players.find((p: OutlookPlayer) => p.playerId === gp.playerId)
+  const burnedShare = outlookPlayer?.burnedShare ?? 0
+
+  // Up to 3 burned champions highest in startLikelihoods
+  const usualPicksAlreadyGone: string[] = []
+  for (const l of gp.startLikelihoods) {
+    if (plan.burned.has(l.championId)) {
+      usualPicksAlreadyGone.push(names.champion(l.championId))
+      if (usualPicksAlreadyGone.length >= 3) break
+    }
+  }
+
+  // Up to 3 likely picks now (from current likelihoods)
+  const likelyPicksNow: { champion: string; likelihoodPct: number; gamesPlayed: number }[] = []
+  for (const l of gp.likelihoods) {
+    const poolEntry = gp.pool.credible.find((pe: { championId: string; games: number }) => pe.championId === l.championId)
+    likelyPicksNow.push({
+      champion: names.champion(l.championId),
+      likelihoodPct: Math.round(l.probability * 100),
+      gamesPlayed: poolEntry?.games ?? 0,
+    })
+    if (likelyPicksNow.length >= 3) break
+  }
+
+  const pf: NotePlayerFacts = {
+    player: gp.playerName,
+    role: gp.role,
+    usualPicksAlreadyGonePct: Math.round(burnedShare * 100),
+    usualPicksAlreadyGone,
+    likelyPicksNow,
+  }
+  if (gp.priorGames < 20) {
+    pf.limitedHistory = true
+  }
+  return pf
 }
 
 // ── 1.3: checkNote ──────────────────────────────────────────────────

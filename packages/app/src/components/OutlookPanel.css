@@ -211,3 +211,98 @@
   color: var(--text);
   margin-bottom: 0.25rem;
 }
+
+/* ── Pre-game note ────────────────────────────── */
+
+.outlook-note {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--surface-2);
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.outlook-note-dimmed {
+  opacity: 0.5;
+}
+
+.outlook-note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.outlook-note-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.outlook-note-switch {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.outlook-note-team-btn {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+}
+
+.outlook-note-team-btn.selected {
+  background: var(--line);
+  color: var(--text);
+}
+
+.outlook-note-team-btn.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.outlook-note-headline {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+.outlook-note-point {
+  margin-bottom: 0.4rem;
+}
+
+.outlook-note-point-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ember);
+  margin-bottom: 0.1rem;
+}
+
+.outlook-note-point-text {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.outlook-note-attribution {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.outlook-note-draft-label {
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--ember);
+  font-style: italic;
+}

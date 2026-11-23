@@ -67,6 +67,8 @@ export interface Manifest {
   teams: TeamRef[]
   champions: ChampionRef[]
   players: PlayerRef[]
+  /** Optional: notes model info, set by pnpm data:notes or preserved by pnpm data. */
+  notes?: { model: string; count: number }
 }
 
 /** One row per series for the series picker. */

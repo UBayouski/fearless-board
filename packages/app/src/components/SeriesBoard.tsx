@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react'
-import type { ChampionRef, DraftActionInput, GameDraft, GamePlan, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import type { ChampionRef, DraftActionInput, GameDraft, GamePlan, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef, WrittenNote } from '@fearless-board/shared'
 import { gamePlan as computeGamePlan, DRAFT_ORDER, conditionLikelihoods } from '@fearless-board/shared'
 import { draftReducer, actingTeam, liveGamePlan, firstTeamOfGame, type DraftSession, type DraftEvent, type DraftContext } from '@fearless-board/shared'
 import { BurnedStrip } from './BurnedStrip'
@@ -29,6 +29,7 @@ export function SeriesBoard({
   model: propModel,
   initialSession, // for tests only
   initialCostChampion, // for tests only
+  notesData,
 }: {
   draft: SeriesDraft
   picks: PickRow[]
@@ -50,6 +51,8 @@ export function SeriesBoard({
   initialSession?: DraftSession
   /** Optional champion preselected for "What does a pick cost?" (for tests only). */
   initialCostChampion?: string
+  /** Optional notes data for this series. */
+  notesData?: { model: string; games: Record<string, Record<string, WrittenNote>> }
 }) {
   const gameNumber = selectedGame ?? (() => {
     if (draft.games.length >= 3) return 3
@@ -459,6 +462,9 @@ export function SeriesBoard({
           selectedChampion={costChampion}
           onSelectChampion={setCostChampion}
           unavailable={draftConditioned?.unavailable ?? usedPlan.burned}
+          notesData={notesData}
+          gameNumber={gameNumber}
+          draftMode={draftMode && session.actions.length > 0}
         />
       )}
 

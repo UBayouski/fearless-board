@@ -1,6 +1,6 @@
 // Builds the aggregate JSON the app loads, from a local clone of the hackathon data repo.
 // The data repo lives next to this project, never inside it (see README).
-import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, CalibrationBin } from '@fearless-board/shared'
@@ -655,6 +655,15 @@ const manifest: Manifest = {
   players: [...playerRefMap.entries()].map(([id, name]) => ({
     id, name, role: playerRole.get(id) ?? null,
   })),
+}
+
+// 3.9: Preserve notes entry if the notes folder still exists
+const notesDir = resolve(outputDir, 'notes')
+if (existsSync(notesDir)) {
+  const notesFiles = readdirSync(notesDir).filter((f: string) => f.endsWith('.json'))
+  if (notesFiles.length > 0) {
+    manifest.notes = { model: 'gemini-3.8-flash', count: notesFiles.length }
+  }
 }
 
 writeFileSync(resolve(outputDir, 'manifest.json'), JSON.stringify(manifest))

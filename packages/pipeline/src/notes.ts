@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  gamePlan, seriesOutlook,
+  gamePlan, seriesOutlook, decodeCompactPicks,
   noteFacts, noteWorthwhile, checkNote, NOTE_PROMPT, NOTE_PROMPT_VERSION,
   type SeriesDraft, type WrittenNote, type NoteFacts,
   type NoteNames, type PickRow, type PickModel, type Role,
@@ -94,15 +94,7 @@ if (!existsSync(picksPath)) {
   process.exit(1)
 }
 const compactPicks = JSON.parse(readFileSync(picksPath, 'utf-8'))
-// Decode compact picks to PickRow[]
-const picks: PickRow[] = compactPicks.rows.map((row: number[]) => ({
-  seriesId: compactPicks.series[row[0]],
-  gameNumber: row[1],
-  teamId: compactPicks.teams[row[2]],
-  playerId: compactPicks.players[row[3]],
-  championId: compactPicks.champions[row[4]],
-  won: row[5] === 1,
-}))
+const picks: PickRow[] = decodeCompactPicks(compactPicks)
 // Add scheduledStart from series-index
 const seriesIndex: { seriesId: string; scheduledStart: string }[] = JSON.parse(readFileSync(resolve(outputDir, 'series-index.json'), 'utf-8'))
 const seriesStartMap = new Map<string, string>(seriesIndex.map((s) => [s.seriesId, s.scheduledStart]))
