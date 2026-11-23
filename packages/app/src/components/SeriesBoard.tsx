@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
-import type { ChampionRef, PickRow, PlayerRef, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import { useEffect, useMemo, useState } from 'react'
+import type { ChampionRef, PickModel, PickRow, PlayerRef, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import { BurnedStrip } from './BurnedStrip'
 import { CompactHistoryCard } from './CompactHistoryCard'
 import { GameColumn } from './GameColumn'
+import { LeveragePanel } from './LeveragePanel'
 import { PoolMatrix } from './PoolMatrix'
 import './SeriesBoard.css'
 
@@ -38,6 +39,14 @@ export function SeriesBoard({
   })()
 
   const [revealedGames, setRevealedGames] = useState<Set<number>>(new Set())
+
+  // Load model (shared with PoolMatrix and LeveragePanel)
+  const [model, setModel] = useState<PickModel | undefined>()
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}data/model.json`).then(async (r) => {
+      if (r.ok) setModel(await r.json())
+    }).catch(() => {})
+  }, [])
 
   const t0 = teamMap.get(draft.teamIds[0])
   const t1 = teamMap.get(draft.teamIds[1])
@@ -179,6 +188,21 @@ export function SeriesBoard({
           championMap={championMap}
           playerMap={playerMap}
           gameNumber={gameNumber}
+          model={model}
+          revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
+        />
+      )}
+
+      {/* ── Leverage panel (after matrix) ──────────────────── */}
+      {gameNumber && model && (
+        <LeveragePanel
+          draft={draft}
+          picks={picks}
+          teamMap={teamMap}
+          championMap={championMap}
+          playerMap={playerMap}
+          gameNumber={gameNumber}
+          model={model}
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
         />
       )}

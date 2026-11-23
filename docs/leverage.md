@@ -83,6 +83,24 @@ A panel directly under the pool matrix, two columns in the same team order as th
 
 The panel must not push the matrix down: it comes after it. No change to the cells.
 
+### 3b. Corrections after review of section 3
+
+- **The order looks arbitrary because the number it is sorted by is not shown.** A row shows the opponent's
+  threat (26%) while the list is sorted by threat minus own cost (7 points). Make the net value the main
+  figure of the row, with a sign: "Azir  +7". Then, on the same line in muted text:
+  "them 26% (Jojopyun 26%) · you 19% (Caps 19%)". The bar shows the net value, scaled to the largest net
+  value in the panel. Drop the separate "costs you" line.
+- **Empty "costs you:".** The Jayce row shows the label with nothing after it (own threat at 5% or more but
+  no single player at 5% or more). With the single line above this disappears; when a side has no player at
+  5% or more, show only the percentage.
+- **Rows with a net value of 2 points or less are not suggestions.** Leave them out, even if the list then
+  has fewer than 8 rows. If a team has none, show "No ban stands out: both teams want the same champions."
+- **Denial picks:** same single-line form, "Xin Zhao · you: SkewMond 31% (24 g) · them: Elyoya 29%".
+- **README wording.** Replace the sentence that the backtest "confirms" the ranking with what the numbers
+  say: leverage finds 26.6% of real bans in its top 8 against 21.1% for the plain list, a modest gain, and
+  about three of four real bans are outside the list; the panel is a list of bans to consider, not a
+  prediction.
+
 ## 4. README
 
 Add both definitions and the backtest result to the "Method" section.

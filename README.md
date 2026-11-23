@@ -85,6 +85,17 @@ The board uses a conditional logit model to score every available champion for e
 
 **Limits:** Professional games in this dataset only; roles are derived from end-of-game state, not official data; bans of the current game are not used because they are unknown before the draft.
 
+**Ban leverage** ranks available champions by how much the opposing team wants them minus how much the own team wants them. The threat of a champion from a team is `1 − ∏(1 − P(player picks c))` across the five players. The top 8 champions by this difference are shown as ban suggestions, with the opponent players who want each champion (likelihood ≥ 5%) and the cost to the own team if it also wants the champion. **Denial picks** are champions an own-team player has played before and has among their ten most likely picks, sorted by the opponent's threat — picking such a champion both uses it and removes it from the opponent for the rest of the series.
+
+**Ban leverage backtest** on 2026+ games (model trained on pre-2026):
+
+| Group | Bans | Leverage Top 5 | Leverage Top 8 | Threat Top 5 | Threat Top 8 | Meta Top 5 | Meta Top 8 |
+|---|---|---|---|---|---|---|---|
+| All games | 4,499 | 17.8% | 26.6% | 15.7% | 23.6% | 13.9% | 21.1% |
+| Games 2+ | 2,459 | 18.5% | 27.4% | 16.5% | 25.4% | 15.0% | 23.5% |
+
+Leverage finds 26.6% of real bans in its top 8 against 21.1% for the plain 45-day meta list — a modest gain. About three of four real bans fall outside the list entirely, so the panel is a list of bans to consider, not a prediction.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE). The licence covers this code only, not the match data.

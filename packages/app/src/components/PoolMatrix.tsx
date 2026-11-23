@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { ChampionRef, GameDraft, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import { burnedChampions, crediblePool, playerPool } from '@fearless-board/shared'
 import { PoolMatrixCell } from './PoolMatrixCell'
@@ -13,6 +13,7 @@ export function PoolMatrix({
   championMap,
   playerMap,
   gameNumber,
+  model,
   revealedGame,
 }: {
   draft: SeriesDraft
@@ -21,15 +22,9 @@ export function PoolMatrix({
   championMap: Map<string, ChampionRef>
   playerMap: Map<string, PlayerRef>
   gameNumber: number
+  model?: PickModel
   revealedGame?: GameDraft
 }) {
-  // Load model
-  const [model, setModel] = useState<PickModel | undefined>()
-  useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}data/model.json`).then(async (r) => {
-      if (r.ok) setModel(await r.json())
-    }).catch(() => {})
-  }, [])
   const burned = burnedChampions(draft.games, gameNumber)
 
   const burnedByGame = useMemo(() => {
