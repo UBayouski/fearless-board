@@ -118,6 +118,35 @@ Stop after these corrections and report the table for the three groups.
   predicted probability and the share actually picked, to `backtest.json` under `model.calibration`. Print
   the table. Do not adjust the model to improve it; report it.
 
+### 3b. Corrections after review of sections 3 and 3a
+
+- **The training does not converge, so the weights are wrong.** `trainPickModel` uses gradient ascent with a
+  fixed step of 0.5. On the real data it ends in an oscillation: the weights look stable but the mean
+  log-likelihood per training pick is -2.94, while the optimum is about -2.59. The symptom is on the board
+  and in the calibration table: "Rumble 69%", and candidates given 33% on average are picked 17% of the time.
+  The rankings barely suffer, the percentages do.
+  - Replace the optimiser with Newton's method: gradient and 4 x 4 Hessian of the log-likelihood, solve for
+    the step, halve the step while the log-likelihood does not improve, stop when the largest gradient
+    component (per example) is below 1e-8 or after 50 iterations. Still no randomness.
+  - Return the final mean log-likelihood and the iteration count with the model, and print them.
+  - Tests: on a fixture, the gradient at the returned weights is close to zero, and the log-likelihood is
+    not lower than at weights of zero.
+  - Write the mean log-likelihood per pick on the training and on the test picks to `backtest.json` under
+    `model`.
+  - Expected after the fix, trained on 2025: weights near 0.10 (recentGames), 0.07 (played), 1.10 (roleMeta),
+    0.47 (roleAllTime); training log-likelihood near -2.59, test near -2.78; in the calibration bin "20%+"
+    a mean prediction near 25% against about 20% picked; top 5 on games 2 and later near 62.6%. Report what
+    you get; do not tune.
+- **Tile wording.** The second line repeats the first: "18g" and "played 18 times". For played champions the
+  second line is only the role share ("7% of recent top picks"); for the others it ends with "· not played".
+- **Tests** for `calibrateModel` (a fixture with known bins) and `buildPickLikelihoods` (same result as
+  `pickFeatures` followed by `pickLikelihoods`).
+- **README.** Replace the "~" figures with the exact numbers from `backtest.json` after the rerun, and add
+  the calibration table.
+
+Stop after these corrections and report: weights, both log-likelihoods, the three groups, the calibration
+table.
+
 ## 4. README
 
 A short "Method" section: what the model is, the four features, the train and test split, the results

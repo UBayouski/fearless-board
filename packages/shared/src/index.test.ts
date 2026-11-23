@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, pickFeatures, trainPickModel, pickLikelihoods, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft, type Role, type PickCandidate, type PickExample } from './index.ts'
+import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, pickFeatures, trainPickModel, pickLikelihoods, calibrateModel, buildPickLikelihoods, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft, type Role, type PickCandidate, type PickExample, type PickFeatures } from './index.ts'
 
 const action = (order: number, type: DraftAction['type'], teamId: string, championId: string): DraftAction => ({
   order,
@@ -432,4 +432,179 @@ test('pickFeatures: later series does not affect earlier series', () => {
   assert.ok(c1Feat !== undefined, 'c1 should be in candidates')
   assert.equal(c1Feat!.features.played, 1, 'c1 was played before 2025-03-01')
   assert.equal(c2Feat!.features.played, 0, 'c2 was not played before 2025-03-01 (later series)')
+})
+
+// ── Section 3b: Newton's method tests ──────────────────────────────────
+
+test('trainPickModel: gradient close to zero at returned weights', () => {
+  // Train on a fixture where one feature decides the pick
+  const examples: PickExample[] = []
+  for (let i = 0; i < 200; i++) {
+    examples.push({
+      playerId: 'p1',
+      role: 'mid' as Role,
+      seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 2, played: 1, roleMeta: 0.5, roleAllTime: 0.3 } },
+        { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c3', features: { recentGames: 0.3, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+
+  // Check gradient is close to zero by computing it manually
+  const K = 4
+  const featureKeys: (keyof PickFeatures)[] = ['recentGames', 'played', 'roleMeta', 'roleAllTime']
+  const grad = new Array(K).fill(0)
+
+  for (const ex of examples) {
+    const scores = ex.candidates.map((c) => {
+      let s = 0
+      for (let k = 0; k < K; k++) {
+        s += model.weights[k] * ((c.features[featureKeys[k]] - model.mean[k]) / model.sd[k])
+      }
+      return s
+    })
+    const maxS = Math.max(...scores)
+    const exps = scores.map((s) => Math.exp(s - maxS))
+    const sumE = exps.reduce((a, b) => a + b, 0)
+    const probs = exps.map((e) => e / sumE)
+    const actualIdx = ex.candidates.findIndex((c) => c.championId === ex.actualChampionId)
+
+    for (let k = 0; k < K; k++) {
+      let g = ((ex.candidates[actualIdx].features[featureKeys[k]] - model.mean[k]) / model.sd[k])
+      for (let j = 0; j < ex.candidates.length; j++) {
+        g -= probs[j] * ((ex.candidates[j].features[featureKeys[k]] - model.mean[k]) / model.sd[k])
+      }
+      grad[k] += g
+    }
+  }
+
+  // Average gradient should be close to zero
+  for (let k = 0; k < K; k++) {
+    grad[k] /= examples.length
+    assert.ok(Math.abs(grad[k]) < 0.05, `gradient component ${k} is close to zero: ${grad[k]}`)
+  }
+})
+
+test('trainPickModel: log-likelihood not lower than at zero weights', () => {
+  const examples: PickExample[] = []
+  for (let i = 0; i < 100; i++) {
+    examples.push({
+      playerId: 'p1',
+      role: 'top' as Role,
+      seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 1.5, played: 1, roleMeta: 0.3, roleAllTime: 0.2 } },
+        { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c3', features: { recentGames: 0.2, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+
+  // The trained model's log-likelihood should be >= the log-likelihood at zero weights
+  // (zero weights = uniform distribution)
+  const uniformLL = Math.log(1 / 3) // 3 candidates, uniform
+  assert.ok(model.meanLogLikelihood >= uniformLL - 0.01, `trained LL (${model.meanLogLikelihood}) >= uniform LL (${uniformLL})`)
+})
+
+test('calibrateModel: known bins', () => {
+  // Create examples where we know the probabilities
+  const examples: PickExample[] = []
+  for (let i = 0; i < 50; i++) {
+    examples.push({
+      playerId: 'p1',
+      role: 'mid' as Role,
+      seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 3, played: 1, roleMeta: 1, roleAllTime: 0.5 } },
+        { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c3', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1', // c1 always wins
+    })
+  }
+  const model = trainPickModel(examples)
+  const calibration = calibrateModel(model, examples)
+
+  // Should have 5 bins
+  assert.equal(calibration.length, 5)
+  assert.equal(calibration[0].label, '0-2%')
+  assert.equal(calibration[4].label, '20%+')
+
+  // Total count should be 3 * 50 = 150 (3 candidates per example)
+  const total = calibration.reduce((s, b) => s + b.count, 0)
+  assert.equal(total, 150)
+
+  // The actual pick rate in the highest bin should be high (c1 is always picked and has high probability)
+  const topBin = calibration[4]
+  assert.ok(topBin.actualPickRate > 50, `top bin actual rate should be high: ${topBin.actualPickRate}`)
+})
+
+test('buildPickLikelihoods: same result as pickFeatures + pickLikelihoods', () => {
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),
+    pickRow('2025-01-10', 's1', 1, 'tA', 'p1', 'c1', true),
+    pickRow('2025-01-15', 's2', 1, 'tA', 'p1', 'c2', true),
+  ]
+  const burned = new Set<string>()
+  const allChampionIds = new Set(['c1', 'c2', 'c3'])
+  const roleCounts: Record<string, { total45: number; totalAll: number; champions: Record<string, [number, number]> }> = {
+    mid: {
+      total45: 100,
+      totalAll: 500,
+      champions: {
+        c1: [10, 50] as [number, number],
+        c2: [5, 25] as [number, number],
+        c3: [2, 10] as [number, number],
+      },
+    },
+  }
+
+  // Build using pickFeatures + pickLikelihoods
+  const rolePicks45 = new Map<string, number>()
+  const rolePicksAll = new Map<string, number>()
+  for (const [champId, counts] of Object.entries(roleCounts.mid.champions)) {
+    rolePicks45.set(champId, counts[0])
+    rolePicksAll.set(champId, counts[1])
+  }
+  const candidates = pickFeatures('p1', '2025-02-01', picks, burned, rolePicks45, rolePicksAll, 100, 500, allChampionIds)
+
+  const examples: PickExample[] = []
+  for (let i = 0; i < 50; i++) {
+    examples.push({
+      playerId: 'p1',
+      role: 'mid' as Role,
+      seriesDate: '2025-03-01',
+      candidates: candidates.map(c => ({ ...c })),
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+
+  const likelihoodsDirect = pickLikelihoods(model, candidates)
+
+  // Build using buildPickLikelihoods
+  const likelihoodsBundled = buildPickLikelihoods(
+    model,
+    'p1',
+    'mid' as Role,
+    '2025-02-01',
+    picks,
+    burned,
+    roleCounts,
+    allChampionIds,
+  )
+
+  // Should produce the same results
+  assert.equal(likelihoodsDirect.length, likelihoodsBundled.length)
+  for (let i = 0; i < likelihoodsDirect.length; i++) {
+    assert.equal(likelihoodsDirect[i].championId, likelihoodsBundled[i].championId)
+    assert.ok(Math.abs(likelihoodsDirect[i].probability - likelihoodsBundled[i].probability) < 1e-6,
+      `probability match for ${likelihoodsDirect[i].championId}`)
+  }
 })

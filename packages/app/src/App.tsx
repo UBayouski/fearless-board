@@ -11,7 +11,10 @@ import './index.css'
 async function loadBacktest() {
   try {
     const r = await fetch(`${import.meta.env.BASE_URL}data/backtest.json`)
-    return await r.json() as { summary: { inPool: number; inPool20: number; gameCount: number } }
+    return await r.json() as {
+      summary: { inPool: number; inPool20: number; gameCount: number }
+      model?: { groups?: Array<{ name: string; model: { top5: number; top10: number }; gamesPlayed: { top5: number; top10: number } }> }
+    }
   } catch {
     return null
   }
@@ -24,13 +27,31 @@ function App() {
   const [seriesDraft, setSeriesDraft] = useState<SeriesDraft | null>(null)
   const [seriesError, setSeriesError] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
-  const [backtestStats, setBacktestStats] = useState<{ inPool: number; inPool20: number; gameCount: number } | null>(null)
+  const [backtestStats, setBacktestStats] = useState<{
+    inPool: number
+    inPool20: number
+    gameCount: number
+    modelTop5?: number
+    modelTop10?: number
+    gamesPlayedTop5?: number
+    gamesPlayedTop10?: number
+  } | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadAll().then(setLoad)
     loadBacktest().then((bt) => {
-      if (bt?.summary) setBacktestStats(bt.summary)
+      if (bt?.summary) {
+        // 3: Use the "games 2+" group for reliability numbers
+        const games2Group = bt.model?.groups?.find((g) => g.name === 'games 2+')
+        setBacktestStats({
+          ...bt.summary,
+          modelTop5: games2Group?.model?.top5,
+          modelTop10: games2Group?.model?.top10,
+          gamesPlayedTop5: games2Group?.gamesPlayed?.top5,
+          gamesPlayedTop10: games2Group?.gamesPlayed?.top10,
+        })
+      }
     })
   }, [])
 
@@ -181,12 +202,20 @@ function App() {
         )}
       </section>
 
-      {/* ── 6: Backtest reliability footer ──────────────────── */}
+      {/* ── 3: Reliability footer from backtest.json ────────── */}
       {backtestStats && (
         <footer className="app-footer">
-          <span className="backtest-note">
-            Across {backtestStats.gameCount} later games, {backtestStats.inPool}% of picks were in the pool shown ({backtestStats.inPool20}% for players with 20+ earlier games).
-          </span>
+          {backtestStats.modelTop5 != null && backtestStats.gamesPlayedTop5 != null ? (
+            <span className="backtest-note">
+              On later games, the actual pick was among the five most likely {backtestStats.modelTop5}% of the time
+              ({backtestStats.gamesPlayedTop5}% for a ranking by games played).
+            </span>
+          ) : (
+            <span className="backtest-note">
+              Across {backtestStats.gameCount} later games, {backtestStats.inPool}% of picks were in the pool shown
+              ({backtestStats.inPool20}% for players with 20+ earlier games).
+            </span>
+          )}
           <span className="attribution">
             Match data: GRID, provided for the Sky's The Limit 2026 hackathon. Not affiliated with or endorsed by Riot Games.
           </span>

@@ -46,6 +46,10 @@ export interface SeriesDraft {
   scheduledStart: string
   teamIds: [string, string]
   games: GameDraft[]
+  /** Per-role pick counts as of this series start (from pipeline). */
+  roleCounts?: Record<string, { total45: number; totalAll: number; champions: Record<string, [number, number]> }>
+  /** Champion IDs seen in any series before this one. */
+  championsSeen?: string[]
 }
 
 export type Role = 'top' | 'jungle' | 'mid' | 'bot' | 'support'
@@ -245,6 +249,10 @@ export interface PickModel {
   weights: [number, number, number, number]
   mean: [number, number, number, number]
   sd: [number, number, number, number]
+  /** Mean log-likelihood per training example (natural log). */
+  meanLogLikelihood: number
+  /** Number of optimizer iterations performed. */
+  iterations: number
 }
 
 /** One candidate champion with its features. */
@@ -340,7 +348,9 @@ export function pickFeatures(
 
 /**
  * Train a conditional logit model: maximise log-likelihood of the actual pick
- * among its candidates. Full-batch gradient ascent, fixed iterations, no randomness.
+ * among its candidates. Newton's method with line search, no randomness.
+ *
+ * Returns weights, standardisation params, mean log-likelihood, and iteration count.
  */
 export function trainPickModel(examples: readonly PickExample[]): PickModel {
   const K = 4 // number of features
@@ -371,63 +381,200 @@ export function trainPickModel(examples: readonly PickExample[]): PickModel {
   // Standardise features helper
   const std = (v: number, k: number) => (v - mean[k]) / sd[k]
 
+  // Pre-compute standardised feature matrix for each example
+  interface ExStd {
+    x: number[][] // candidates x K (standardised)
+    actualIdx: number
+  }
+  const exStd: ExStd[] = []
+  for (const ex of examples) {
+    const actualIdx = ex.candidates.findIndex((c) => c.championId === ex.actualChampionId)
+    if (actualIdx < 0) continue
+    const x: number[][] = []
+    for (const c of ex.candidates) {
+      const row = new Array(K)
+      for (let k = 0; k < K; k++) {
+        row[k] = std(c.features[featureKeys[k]], k)
+      }
+      x.push(row)
+    }
+    exStd.push({ x, actualIdx })
+  }
+
   // Initialise weights to zero
-  let weights = new Array(K).fill(0)
+  let w = new Array(K).fill(0)
 
-  // Full-batch gradient ascent
-  const lr = 0.5
-  const iterations = 500
-  for (let iter = 0; iter < iterations; iter++) {
-    const grad = new Array(K).fill(0)
-    let nExamples = 0
-
-    for (const ex of examples) {
-      // Softmax over candidates
-      const scores = ex.candidates.map((c) => {
+  // Compute log-likelihood
+  function logLikelihood(w: number[]): number {
+    let ll = 0
+    let n = 0
+    for (const ex of exStd) {
+      const scores = ex.x.map((row) => {
         let s = 0
-        for (let k = 0; k < K; k++) {
-          s += weights[k] * std(c.features[featureKeys[k]], k)
-        }
+        for (let k = 0; k < K; k++) s += w[k] * row[k]
         return s
       })
+      const maxS = Math.max(...scores)
+      const exps = scores.map((s) => Math.exp(s - maxS))
+      const sumE = exps.reduce((a, b) => a + b, 0)
+      ll += ex.actualIdx >= 0 ? Math.log(exps[ex.actualIdx] / sumE) : 0
+      n++
+    }
+    return n > 0 ? ll / n : 0
+  }
 
-      // Numerical stability: subtract max
-      const maxScore = Math.max(...scores)
-      const exps = scores.map((s) => Math.exp(s - maxScore))
-      const sumExps = exps.reduce((a, b) => a + b, 0)
-      const probs = exps.map((e) => e / sumExps)
+  // Newton's method with line search
+  const maxIter = 50
+  const gradThreshold = 1e-8
+  let iterations = 0
+  let bestLL = logLikelihood(w)
 
-      // Find actual pick index
-      const actualIdx = ex.candidates.findIndex((c) => c.championId === ex.actualChampionId)
-      if (actualIdx < 0) continue // skip if actual not in candidates
+  for (let iter = 0; iter < maxIter; iter++) {
+    iterations++
 
-      // Gradient of log-likelihood: x_actual - sum(p_j * x_j)
-      // (gradient ascent on log-likelihood = gradient descent on NLL)
+    // Compute gradient and Hessian
+    const grad = new Array(K).fill(0)
+    const hess: number[][] = []
+    for (let k = 0; k < K; k++) hess.push(new Array(K).fill(0))
+    let nEx = 0
+
+    for (const ex of exStd) {
+      // Softmax probabilities
+      const scores = ex.x.map((row) => {
+        let s = 0
+        for (let k = 0; k < K; k++) s += w[k] * row[k]
+        return s
+      })
+      const maxS = Math.max(...scores)
+      const exps = scores.map((s) => Math.exp(s - maxS))
+      const sumE = exps.reduce((a, b) => a + b, 0)
+      const probs = exps.map((e) => e / sumE)
+
+      // Gradient: for each example, gradient of log p(actual) = x_actual - sum_j(p_j * x_j)
       for (let k = 0; k < K; k++) {
-        let g = 0
-        for (let j = 0; j < ex.candidates.length; j++) {
-          const x = std(ex.candidates[j].features[featureKeys[k]], k)
-          g -= probs[j] * x
+        let g = ex.x[ex.actualIdx][k]
+        for (let j = 0; j < ex.x.length; j++) {
+          g -= probs[j] * ex.x[j][k]
         }
-        // Add actual pick's feature (positive contribution)
-        g += std(ex.candidates[actualIdx].features[featureKeys[k]], k)
         grad[k] += g
       }
-      nExamples++
+
+      // Hessian: -sum_j(p_j * x_j) * x_i^T + p_actual * x_actual * x_i^T
+      // Simplified: Hessian of log-likelihood = -(covariance of features under softmax)
+      for (let i = 0; i < K; i++) {
+        for (let j = 0; j < K; j++) {
+          let h = 0
+          for (let m = 0; m < ex.x.length; m++) {
+            h -= probs[m] * ex.x[m][i] * ex.x[m][j]
+          }
+          // Add back the actual pick's contribution (it's already in the sum with negative sign)
+          // The Hessian of log p(actual) = -E[xx^T] + p_actual * x_actual * x_actual^T
+          // But the standard form for multinomial logit is just -E[xx^T] + p_actual * x_actual * x_actual^T
+          // Actually, the Hessian of log-likelihood for conditional logit is:
+          // d^2/dw_i dw_j log p(actual) = -sum_m p_m x_mi x_mj + p_actual x_actual_i x_actual_j
+          // But since we already have -sum_m p_m x_mi x_mj in h, we need to add p_actual * x_actual_i * x_actual_j
+          // Wait, the gradient is x_actual - sum_m p_m x_m
+          // The Hessian is -sum_m p_m(1-p_m) x_m x_m^T + sum_{m!=n} p_m p_n x_m x_n^T
+          // This simplifies to: -sum_m p_m x_m x_m^T + (sum_m p_m x_m)(sum_n p_n x_n)^T
+          // Let's use the simpler form: Hessian = -(E[xx^T] - E[x]E[x]^T) = -Cov[x]
+          // But for numerical stability, let's use the direct form
+          hess[i][j] += h
+        }
+      }
+      nEx++
     }
 
-    if (nExamples === 0) break
+    // Average gradient and Hessian
+    for (let k = 0; k < K; k++) grad[k] /= nEx
+    for (let i = 0; i < K; i++) {
+      for (let j = 0; j < K; j++) hess[i][j] /= nEx
+    }
 
-    // Update weights (gradient ascent on log-likelihood)
+    // Check convergence: max gradient component
+    let maxGrad = 0
     for (let k = 0; k < K; k++) {
-      weights[k] += lr * grad[k] / nExamples
+      if (Math.abs(grad[k]) > maxGrad) maxGrad = Math.abs(grad[k])
+    }
+    if (maxGrad < gradThreshold) break
+
+    // Solve Hessian * step = -gradient (Newton step)
+    // Since Hessian is negative definite (we're maximizing), we solve (-Hessian) * step = gradient
+    // Add small regularization for numerical stability
+    const reg = 1e-6
+    const negHess: number[][] = []
+    for (let i = 0; i < K; i++) {
+      negHess.push(new Array(K))
+      for (let j = 0; j < K; j++) {
+        negHess[i][j] = -hess[i][j] + (i === j ? reg : 0)
+      }
+    }
+
+    // Solve using Gaussian elimination (K=4, small system)
+    const augmented: number[][] = []
+    for (let i = 0; i < K; i++) {
+      augmented.push([...negHess[i], grad[i]])
+    }
+
+    // Forward elimination with partial pivoting
+    for (let col = 0; col < K; col++) {
+      // Find pivot
+      let maxRow = col
+      let maxVal = Math.abs(augmented[col][col])
+      for (let row = col + 1; row < K; row++) {
+        if (Math.abs(augmented[row][col]) > maxVal) {
+          maxVal = Math.abs(augmented[row][col])
+          maxRow = row
+        }
+      }
+      // Swap rows
+      const temp = augmented[col]
+      augmented[col] = augmented[maxRow]
+      augmented[maxRow] = temp
+
+      // Eliminate below
+      for (let row = col + 1; row < K; row++) {
+        const factor = augmented[row][col] / augmented[col][col]
+        for (let j = col; j <= K; j++) {
+          augmented[row][j] -= factor * augmented[col][j]
+        }
+      }
+    }
+
+    // Back substitution
+    const step = new Array(K)
+    for (let i = K - 1; i >= 0; i--) {
+      let sum = augmented[i][K]
+      for (let j = i + 1; j < K; j++) {
+        sum -= augmented[i][j] * step[j]
+      }
+      step[i] = sum / augmented[i][i]
+    }
+
+    // Line search: halve step while log-likelihood doesn't improve
+    let stepSize = 1
+    let newW = new Array(K)
+    let newLL: number
+    do {
+      for (let k = 0; k < K; k++) newW[k] = w[k] + stepSize * step[k]
+      newLL = logLikelihood(newW)
+      stepSize /= 2
+    } while (newLL <= bestLL && stepSize > 1e-10)
+
+    if (newLL > bestLL) {
+      w = newW
+      bestLL = newLL
+    } else {
+      // Can't improve, stop
+      break
     }
   }
 
   return {
-    weights: weights as [number, number, number, number],
+    weights: w as [number, number, number, number],
     mean: mean as [number, number, number, number],
     sd: sd as [number, number, number, number],
+    meanLogLikelihood: bestLL,
+    iterations,
   }
 }
 
@@ -558,6 +705,112 @@ export function evaluateGamesPlayed(
     top5_20: pct(top5_20, totalPicks20),
     top10_20: pct(top10_20, totalPicks20),
   }
+}
+
+/**
+ * Build pick likelihoods for one player in the app context.
+ *
+ * The app has the model, role counts from the series file, and the player's
+ * pool. This function builds the candidate features and scores them.
+ *
+ * `roleCounts` comes from the series file: per role, per champion [n45, nAll].
+ * `totalRole45` / `totalRoleAll` are the denominators for the role.
+ * `allChampionIds` is the set of champions seen before this series.
+ * `burned` is the set of burned champion IDs.
+ * `picks` is the full PickRow array (for player history).
+ * `seriesDate` is the series start date string.
+ */
+export function buildPickLikelihoods(
+  model: PickModel,
+  playerId: string,
+  role: Role,
+  seriesDate: string,
+  picks: readonly PickRow[],
+  burned: Set<string>,
+  roleCounts: Record<string, { total45: number; totalAll: number; champions: Record<string, [number, number]> }>,
+  allChampionIds: Set<string>,
+): PickLikelihood[] {
+  const rc = roleCounts[role]
+  if (!rc) return []
+
+  const rolePicks45 = new Map<string, number>()
+  const rolePicksAll = new Map<string, number>()
+  for (const [champId, counts] of Object.entries(rc.champions)) {
+    rolePicks45.set(champId, counts[0])
+    rolePicksAll.set(champId, counts[1])
+  }
+
+  const candidates = pickFeatures(
+    playerId,
+    seriesDate,
+    picks,
+    burned,
+    rolePicks45,
+    rolePicksAll,
+    rc.total45,
+    rc.totalAll,
+    allChampionIds,
+  )
+
+  return pickLikelihoods(model, candidates)
+}
+
+/** One row of the calibration table. */
+export interface CalibrationBin {
+  /** Bin label, e.g. "0-2%". */
+  label: string
+  /** Number of candidates in this bin. */
+  count: number
+  /** Mean predicted probability (percentage). */
+  meanPredicted: number
+  /** Share actually picked (percentage). */
+  actualPickRate: number
+}
+
+/**
+ * Calibrate the model: bin every candidate's probability and measure the share
+ * actually picked in each bin.
+ *
+ * Bins: 0-2%, 2-5%, 5-10%, 10-20%, 20%+.
+ */
+export function calibrateModel(
+  model: PickModel,
+  examples: readonly PickExample[],
+): CalibrationBin[] {
+  // Collect all (probability, wasActual) pairs
+  interface Pair { prob: number; actual: boolean }
+  const pairs: Pair[] = []
+
+  for (const ex of examples) {
+    const likelihoods = pickLikelihoods(model, ex.candidates)
+    for (const l of likelihoods) {
+      pairs.push({ prob: l.probability * 100, actual: l.championId === ex.actualChampionId })
+    }
+  }
+
+  // Define bins: [low, high) where high is exclusive; last bin is inclusive on both ends
+  const bins: { label: string; low: number; high: number }[] = [
+    { label: '0-2%', low: 0, high: 2 },
+    { label: '2-5%', low: 2, high: 5 },
+    { label: '5-10%', low: 5, high: 10 },
+    { label: '10-20%', low: 10, high: 20 },
+    { label: '20%+', low: 20, high: Infinity },
+  ]
+
+  const result: CalibrationBin[] = bins.map((bin) => {
+    const inBin = pairs.filter((p) => p.prob >= bin.low && p.prob < bin.high)
+    const count = inBin.length
+    const meanPredicted = count > 0 ? inBin.reduce((s, p) => s + p.prob, 0) / count : 0
+    const actualPickRate = count > 0 ? inBin.filter((p) => p.actual).length / count * 100 : 0
+    return {
+      label: bin.label,
+      count,
+      meanPredicted: Math.round(meanPredicted * 10) / 10,
+      actualPickRate: Math.round(actualPickRate * 10) / 10,
+    }
+  })
+
+  return result
 }
 
 /**

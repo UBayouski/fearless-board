@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import type { ChampionRef, GameDraft, PickRow, PlayerRef, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import { useEffect, useMemo, useState } from 'react'
+import type { ChampionRef, GameDraft, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import { burnedChampions, crediblePool, playerPool } from '@fearless-board/shared'
 import { PoolMatrixCell } from './PoolMatrixCell'
 import './PoolMatrix.css'
@@ -23,6 +23,13 @@ export function PoolMatrix({
   gameNumber: number
   revealedGame?: GameDraft
 }) {
+  // Load model
+  const [model, setModel] = useState<PickModel | undefined>()
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}data/model.json`).then(async (r) => {
+      if (r.ok) setModel(await r.json())
+    }).catch(() => {})
+  }, [])
   const burned = burnedChampions(draft.games, gameNumber)
 
   const burnedByGame = useMemo(() => {
@@ -90,6 +97,7 @@ export function PoolMatrix({
     return map
   }, [revealedGame, picks, draft.scheduledStart, draft.teamIds, playerMap, burned])
 
+  // Reveal summary: count picks in pool
   const revealSummary = useMemo(() => {
     if (!revealedPickMap) return null
     let inPool = 0
@@ -127,9 +135,11 @@ export function PoolMatrix({
               }
               const pool = playerPool(picks, player.id, draft.scheduledStart)
               const { credible, burned: burnedEntries } = crediblePool(pool, burned)
+              const allChampionIds = draft.championsSeen ? new Set(draft.championsSeen) : undefined
               return (
                 <div key={teamId} className="pool-matrix-cell">
                   <PoolMatrixCell
+                    playerId={player.id}
                     playerName={player.name}
                     role={player.role}
                     pool={{ credible, burned: burnedEntries }}
@@ -137,6 +147,10 @@ export function PoolMatrix({
                     championMap={championMap}
                     seriesDate={draft.scheduledStart}
                     revealedPick={revealedPickMap?.get(player.id)}
+                    model={model}
+                    picks={picks}
+                    roleCounts={draft.roleCounts}
+                    allChampionIds={allChampionIds}
                   />
                 </div>
               )

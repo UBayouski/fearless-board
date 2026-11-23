@@ -4,7 +4,7 @@ import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, PickModel, PickExample } from '@fearless-board/shared'
-import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool } from '@fearless-board/shared'
+import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool, calibrateModel } from '@fearless-board/shared'
 import {
   parseCSV,
   type GameRow,
@@ -891,6 +891,7 @@ const evalModel = trainPickModel(trainExamples)
 const trainElapsed = ((performance.now() - trainStart) / 1000).toFixed(1)
 console.log(`  Training time: ${trainElapsed}s`)
 console.log(`  Weights: [${evalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
+console.log(`  Training log-likelihood: ${evalModel.meanLogLikelihood.toFixed(4)} (${evalModel.iterations} iterations)`)
 
 // ── Evaluate model on 2026+ data ──────────────────────────────────────
 
@@ -976,6 +977,7 @@ const allExamples = allExamplesList.map(e => e.example)
 console.log(`  All examples: ${allExamples.length}`)
 const finalModel = trainPickModel(allExamples)
 console.log(`  Final weights: [${finalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
+console.log(`  Final log-likelihood: ${finalModel.meanLogLikelihood.toFixed(4)} (${finalModel.iterations} iterations)`)
 
 // Write model.json
 writeFileSync(resolve(outputDir, 'model.json'), JSON.stringify(finalModel))
@@ -1020,6 +1022,30 @@ for (const draft of drafts) {
   writeFileSync(file, JSON.stringify(existing))
 }
 
+// ── Section 3a: Calibration ────────────────────────────────────────────
+
+console.log('\nRunning calibration...')
+const calibration = calibrateModel(evalModel, evalExamples.map(e => e.example))
+console.log('  Calibration table:')
+console.log('  ' + ['Bin', 'Count', 'Mean Pred', 'Actual Rate'].join('  '))
+for (const bin of calibration) {
+  console.log(`  ${bin.label.padEnd(6)} ${String(bin.count).padEnd(8)} ${bin.meanPredicted.toFixed(1)}%       ${bin.actualPickRate.toFixed(1)}%`)
+}
+
+// Compute test log-likelihood
+let testLL = 0
+let testLLCount = 0
+for (const item of evalExamples) {
+  const likelihoods = pickLikelihoods(evalModel, item.example.candidates)
+  const actual = likelihoods.find(l => l.championId === item.example.actualChampionId)
+  if (actual) {
+    testLL += Math.log(actual.probability)
+    testLLCount++
+  }
+}
+const testMeanLL = testLLCount > 0 ? testLL / testLLCount : 0
+console.log(`\n  Test log-likelihood: ${testMeanLL.toFixed(4)} (${testLLCount} examples)`)
+
 // Write backtest.json with model results
 const backtestOutput = {
   generatedAt: new Date().toISOString(),
@@ -1028,7 +1054,10 @@ const backtestOutput = {
   summary: backtestSummary,
   model: {
     split: splitDate,
+    trainingLogLikelihood: evalModel.meanLogLikelihood,
+    testLogLikelihood: testMeanLL,
     groups: modelGroups,
+    calibration,
   },
 }
 writeFileSync(resolve(outputDir, 'backtest.json'), JSON.stringify(backtestOutput))
@@ -1057,6 +1086,8 @@ console.log(`  In top 3 (20+): ${backtestSummary.inTop320}%`)
 console.log(`  In top 5 (20+): ${backtestSummary.inTop520}%`)
 console.log(`\nModel (2026+ evaluation):`)
 console.log(`  Weights: [${evalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
+console.log(`  Training log-likelihood: ${evalModel.meanLogLikelihood.toFixed(4)}`)
+console.log(`  Test log-likelihood: ${testMeanLL.toFixed(4)}`)
 for (const g of modelGroups) {
   console.log(`  ${g.name} (${g.picks} picks):`)
   console.log(`    Model       — Top 1: ${g.model.top1}%, Top 3: ${g.model.top3}%, Top 5: ${g.model.top5}%, Top 10: ${g.model.top10}%`)

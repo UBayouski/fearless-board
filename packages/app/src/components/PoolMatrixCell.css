@@ -210,6 +210,60 @@
   transition: outline-color 0.2s, border-color 0.2s;
 }
 
+/* ── 3: Model-based pool cell ───────────────────────────────── */
+
+.pool-likelihood-summary {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 3a: Feature explanation — muted second line */
+.champ-tile-explanation {
+  font-size: 0.65rem;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+/* 3: Not-played champion — dashed outline */
+.champ-tile-btn.pool-not-played {
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+}
+
+/* 3: Unlisted pick (reveal) — not in top 10 and not played */
+.champ-tile-btn.pool-unlisted {
+  background: var(--surface-2) !important;
+  border: 2px solid var(--new) !important;
+  font-weight: 700 !important;
+  color: var(--new) !important;
+}
+
+/* 3: Also played collapsible */
+.pool-also-played {
+  margin-bottom: 0.3rem;
+}
+
+.also-played-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.2rem 0;
+  font-family: inherit;
+}
+
+.also-played-toggle:hover {
+  color: var(--text);
+}
+
+.also-played-toggle:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .champ-tile-btn,
   .champ-tile,

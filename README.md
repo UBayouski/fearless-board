@@ -59,6 +59,32 @@ To use a different location, set `STL_DATA_DIR` to the data repository's path.
 
 `pnpm data` writes to `packages/app/public/data/`, which is ignored by git. Run `pnpm check:data` before every commit and push; it fails if any data file is tracked or staged.
 
+## Method
+
+The board uses a conditional logit model to score every available champion for each player. Four features are computed per (player, champion) pair: recency-weighted games played by that player, whether the player has ever played the champion, the champion's popularity in the player's role over the last 45 days, and the champion's all-time popularity in the role. The four weights and standardisation parameters are trained on pre-2026 games using Newton's method and run in the browser as plain arithmetic — no language model or external dependency.
+
+**Model weights:** recentGames 0.0953, played 0.0740, roleMeta 1.1834, roleAllTime 0.3983. Training log-likelihood: −2.5912; test log-likelihood: −2.7818.
+
+**Evaluation** on 2026+ games:
+
+| Group | Picks | Model Top 5 | Games Played Top 5 | Model Top 10 | Games Played Top 10 |
+|---|---|---|---|---|---|
+| All | 4,520 | 62.9% | 50.3% | 85.2% | 72.5% |
+| Games 2+ | 2,460 | 62.6% | 50.1% | 84.3% | 72.5% |
+| Games 2+, 20+ prior | 2,190 | 62.6% | 51.8% | 84.2% | 76.6% |
+
+**Calibration** (predicted vs actual pick rate):
+
+| Bin | Mean predicted | Actual pick rate |
+|---|---|---|
+| 0–2% | 0.2% | 0.1% |
+| 2–5% | 3.2% | 4.4% |
+| 5–10% | 7.3% | 8.7% |
+| 10–20% | 14.0% | 13.6% |
+| 20%+ | 25.5% | 20.1% |
+
+**Limits:** Professional games in this dataset only; roles are derived from end-of-game state, not official data; bans of the current game are not used because they are unknown before the draft.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE). The licence covers this code only, not the match data.

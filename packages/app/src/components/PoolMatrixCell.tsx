@@ -1,5 +1,6 @@
-import type { ChampionRef, PoolEntry, Role } from '@fearless-board/shared'
-import { burnedGameShare } from '@fearless-board/shared'
+import { useState } from 'react'
+import type { ChampionRef, PickLikelihood, PickModel, PickRow, PoolEntry, Role } from '@fearless-board/shared'
+import { burnedGameShare, buildPickLikelihoods } from '@fearless-board/shared'
 import './PoolMatrixCell.css'
 
 function roleLabel(role: Role | null): string {
@@ -7,6 +8,7 @@ function roleLabel(role: Role | null): string {
 }
 
 export function PoolMatrixCell({
+  playerId,
   playerName,
   role,
   pool,
@@ -14,7 +16,12 @@ export function PoolMatrixCell({
   championMap,
   seriesDate,
   revealedPick,
+  model,
+  picks,
+  roleCounts,
+  allChampionIds,
 }: {
+  playerId: string
   playerName: string
   role: Role | null
   pool: { credible: PoolEntry[]; burned: PoolEntry[] }
@@ -22,6 +29,10 @@ export function PoolMatrixCell({
   championMap: Map<string, ChampionRef>
   seriesDate: string
   revealedPick?: { championId: string; rank: number } | null
+  model?: PickModel
+  picks?: readonly PickRow[]
+  roleCounts?: Record<string, { total45: number; totalAll: number; champions: Record<string, [number, number]> }>
+  allChampionIds?: Set<string>
 }) {
   const totalGames = pool.credible.length + pool.burned.length
   const burnedCount = pool.burned.length
@@ -29,9 +40,6 @@ export function PoolMatrixCell({
   const allPool: PoolEntry[] = [...pool.credible, ...pool.burned]
   const burnedSet = new Set(pool.burned.map((e) => e.championId))
   const share = burnedGameShare(allPool, burnedSet)
-
-  // 4: Comfort bar — relative to most-played champion
-  const maxGames = pool.credible.length > 0 ? Math.max(...pool.credible.map((e) => e.games)) : 0
 
   const weeksAgo = (lastPlayed: string) => {
     const diff = Date.parse(seriesDate) - Date.parse(lastPlayed)
@@ -41,16 +49,88 @@ export function PoolMatrixCell({
     return `${weeks} w ago`
   }
 
-  // 4: Recency — more than 12 weeks ago renders at 60% opacity
   const isStale = (lastPlayed: string) => {
     const diff = Date.parse(seriesDate) - Date.parse(lastPlayed)
     const weeks = diff / (7 * 24 * 60 * 60 * 1000)
     return weeks > 12
   }
 
+  // ── Model-based likelihoods ──────────────────────────────────
+  const likelihoods: PickLikelihood[] = (() => {
+    if (!model || !picks || !role || !roleCounts || !allChampionIds) return []
+    return buildPickLikelihoods(
+      model,
+      playerId,
+      role,
+      seriesDate,
+      picks,
+      burnedSet,
+      roleCounts,
+      allChampionIds,
+    )
+  })()
+
+  // If no model, fall back to pool-based display
+  const useModel = likelihoods.length > 0
+
+  // Build a map: championId -> pool entry for lookup
+  const poolMap = new Map<string, PoolEntry>()
+  for (const e of pool.credible) poolMap.set(e.championId, e)
+
+  // 3: Top 10 from model
+  const top10 = useModel ? likelihoods.slice(0, 10) : []
+  // Remaining credible from model (champions the player has played, not in top 10)
+  const alsoPlayed = useModel
+    ? likelihoods.filter((l) => poolMap.has(l.championId) && !top10.some((t) => t.championId === l.championId))
+    : []
+
+  // Sum of likelihood on champions the player has played
+  const likelihoodOnPlayed = useModel
+    ? likelihoods.filter((l) => poolMap.has(l.championId)).reduce((sum, l) => sum + l.probability, 0)
+    : 0
+
+  // 3b: Feature explanation — role share only for played champions, add "not played" for others
+  const featureExplanation = (likelihood: PickLikelihood): string => {
+    const rc = roleCounts && role ? roleCounts[role] : null
+    const n45 = rc?.champions[likelihood.championId]?.[0] ?? 0
+    const nAll = rc?.champions[likelihood.championId]?.[1] ?? 0
+    const total45 = rc?.total45 ?? 0
+    const totalAll = rc?.totalAll ?? 0
+
+    const poolEntry = poolMap.get(likelihood.championId)
+    const played = poolEntry !== undefined
+
+    // Recent share (45-day window)
+    let sharePart: string
+    if (total45 > 0) {
+      const pct = Math.round((n45 / total45) * 100)
+      sharePart = `${pct}% of recent ${role} picks`
+    } else {
+      // Fall back to all-time
+      const pct = totalAll > 0 ? Math.round((nAll / totalAll) * 100) : 0
+      sharePart = `${pct}% of all ${role} picks`
+    }
+
+    // 3b: For played champions, show only the role share; for others, add "not played"
+    return played ? sharePart : `${sharePart} · not played`
+  }
+
   const hasReveal = revealedPick !== undefined
   const isNewPick = revealedPick === null
-  const pickInPool = revealedPick != null && pool.credible.some((e) => e.championId === revealedPick.championId)
+  const revealedChampId = revealedPick?.championId
+
+  // Check if revealed pick is in top 10
+  const revealedInTop10 = useModel && revealedPick != null && top10.some((l) => l.championId === revealedPick.championId)
+  // Check if revealed pick is in alsoPlayed
+  const revealedInAlsoPlayed = useModel && revealedPick != null && alsoPlayed.some((l) => l.championId === revealedPick.championId)
+  // "unlisted" — not in top 10 and not in alsoPlayed (player hasn't played it)
+  const isUnlisted = useModel && revealedPick != null && !revealedInTop10 && !revealedInAlsoPlayed
+
+  // For "Also played" collapsible
+  const [expanded, setExpanded] = useState(false)
+
+  // Max probability for comfort bar
+  const maxProb = top10.length > 0 ? Math.max(...top10.map((l) => l.probability)) : 0
 
   return (
     <div className="pool-cell">
@@ -62,6 +142,11 @@ export function PoolMatrixCell({
         <span className="big-number display">{pool.credible.length}</span> left
         {' · '}<span className="burned-count">{burnedCount} burned</span>
       </div>
+      {useModel && (
+        <div className="pool-likelihood-summary">
+          {Math.round(likelihoodOnPlayed * 100)}% of likely picks are champions played before
+        </div>
+      )}
       <div className="burn-meter-row">
         <div className="burn-meter-bar">
           <div className="burn-meter-fill" style={{ width: `${Math.min(share, 100)}%` }} />
@@ -69,36 +154,122 @@ export function PoolMatrixCell({
         <span className="burn-meter-share">{share}% of games burned</span>
       </div>
 
-      {hasReveal && isNewPick && (
+      {/* ── Reveal: unlisted pick ──────────────────────────── */}
+      {hasReveal && isUnlisted && (
         <div className="pool-cell-section">
-          <button type="button" className="champ-tile-btn pool-new" aria-label={`${championMap.get(revealedPick!.championId)?.name ?? revealedPick!.championId}, new pick`}>
-            {championMap.get(revealedPick!.championId)?.name ?? revealedPick!.championId} <small>new</small>
+          <button type="button" className="champ-tile-btn pool-unlisted" aria-label={`${championMap.get(revealedChampId!)?.name ?? revealedChampId}, unlisted pick`}>
+            {championMap.get(revealedChampId!)?.name ?? revealedChampId} <small>unlisted</small>
           </button>
         </div>
       )}
 
-      {pool.credible.length > 0 && (
+      {/* ── Reveal: new pick (no model) ────────────────────── */}
+      {!useModel && hasReveal && isNewPick && (
+        <div className="pool-cell-section">
+          <button type="button" className="champ-tile-btn pool-new" aria-label={`${championMap.get(revealedChampId!)?.name ?? revealedChampId}, new pick`}>
+            {championMap.get(revealedChampId!)?.name ?? revealedChampId} <small>new</small>
+          </button>
+        </div>
+      )}
+
+      {/* ── Top 10 from model ──────────────────────────────── */}
+      {useModel && top10.length > 0 && (
+        <div className="pool-cell-section">
+          {top10.map((l) => {
+            const champ = championMap.get(l.championId)
+            const poolEntry = poolMap.get(l.championId)
+            const played = poolEntry !== undefined
+            const probPct = Math.round(l.probability * 100)
+            const comfortShare = maxProb > 0 ? (l.probability / maxProb) * 100 : 0
+            const highlighted = hasReveal && revealedInTop10 && l.championId === revealedChampId
+            const stale = poolEntry && isStale(poolEntry.lastPlayed)
+            const ago = poolEntry ? weeksAgo(poolEntry.lastPlayed) : ''
+            const explanation = featureExplanation(l)
+            const rank = revealedPick && l.championId === revealedPick.championId ? revealedPick.rank : 0
+
+            return (
+              <button
+                key={l.championId}
+                type="button"
+                className={`champ-tile-btn ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''} ${!played ? 'pool-not-played' : ''}`}
+                style={{ '--comfort': `${comfortShare}%` } as React.CSSProperties}
+                aria-label={`${champ?.name ?? l.championId}, ${probPct}% likelihood, ${explanation}`}
+              >
+                <span className="champ-tile-inner">
+                  {champ?.name ?? l.championId}
+                  <span className="comfort-bar" style={{ width: `${comfortShare}%` }} />
+                </span>
+                <small>
+                  {probPct}%
+                  {highlighted && rank ? ` · #${rank}` : ''}
+                  {poolEntry ? ` · ${poolEntry.games}g · ${ago}` : ''}
+                </small>
+                <span className="champ-tile-explanation">{explanation}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Also played: collapsible ───────────────────────── */}
+      {useModel && alsoPlayed.length > 0 && (
+        <div className="pool-also-played">
+          <button type="button" className="also-played-toggle" onClick={() => setExpanded(!expanded)}>
+            {expanded ? '▲' : '▼'} Also played: {alsoPlayed.length} more
+          </button>
+          {expanded && (
+            <div className="pool-cell-section">
+              {alsoPlayed.map((l) => {
+                const champ = championMap.get(l.championId)
+                const poolEntry = poolMap.get(l.championId)
+                if (!poolEntry) return null
+                const probPct = Math.round(l.probability * 100)
+                const ago = weeksAgo(poolEntry.lastPlayed)
+                const stale = isStale(poolEntry.lastPlayed)
+                const highlighted = hasReveal && revealedInAlsoPlayed && l.championId === revealedChampId
+                const explanation = featureExplanation(l)
+                const rank = revealedPick && l.championId === revealedPick.championId ? revealedPick.rank : 0
+
+                return (
+                  <button
+                    key={l.championId}
+                    type="button"
+                    className={`champ-tile-btn ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''}`}
+                    aria-label={`${champ?.name ?? l.championId}, ${probPct}% likelihood, ${explanation}`}
+                  >
+                    <span className="champ-tile-inner">
+                      {champ?.name ?? l.championId}
+                    </span>
+                    <small>
+                      {probPct}% · {poolEntry.games}g · {ago}
+                      {highlighted && rank ? ` · #${rank}` : ''}
+                    </small>
+                    <span className="champ-tile-explanation">{explanation}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Fallback: old pool-based display (no model) ────── */}
+      {!useModel && pool.credible.length > 0 && (
         <div className="pool-cell-section">
           {pool.credible.map((e) => {
             const champ = championMap.get(e.championId)
             const ago = weeksAgo(e.lastPlayed)
-            const highlighted = hasReveal && pickInPool && revealedPick !== null && e.championId === revealedPick.championId
-            // 4: Comfort bar width as share of most-played champion
-            const comfortShare = maxGames > 0 ? (e.games / maxGames) * 100 : 0
-            // 4: Stale tiles at 60% opacity
+            const highlighted = hasReveal && revealedPick != null && e.championId === revealedPick.championId
             const stale = isStale(e.lastPlayed)
             return (
-              // 4: Real button element with focus ring
               <button
                 key={e.championId}
                 type="button"
                 className={`champ-tile-btn pool-available ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''}`}
-                style={{ '--comfort': `${comfortShare}%` } as React.CSSProperties}
                 aria-label={`${champ?.name ?? e.championId}, ${e.games} games, ${ago}`}
               >
                 <span className="champ-tile-inner">
                   {champ?.name ?? e.championId}
-                  <span className="comfort-bar" style={{ width: `${comfortShare}%` }} />
                 </span>
                 <small>{e.games}g · {ago}{highlighted && revealedPick ? ` · #${revealedPick.rank}` : ''}</small>
               </button>
@@ -107,6 +278,7 @@ export function PoolMatrixCell({
         </div>
       )}
 
+      {/* ── Burned champions ───────────────────────────────── */}
       {pool.burned.length > 0 && (
         <div className="pool-cell-section pool-cell-burned">
           {pool.burned.map((e) => {
