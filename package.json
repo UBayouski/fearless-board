@@ -13,6 +13,7 @@
     "dev": "pnpm --filter @fearless-board/app dev",
     "build": "pnpm --filter @fearless-board/app build",
     "data": "pnpm --filter @fearless-board/pipeline start",
+    "data:notes": "node packages/pipeline/src/notes.ts",
     "test": "node --test \"packages/*/src/**/*.test.ts\" && pnpm --filter @fearless-board/app exec vitest run",
     "typecheck": "tsc -p packages/shared && tsc -p packages/pipeline && pnpm --filter @fearless-board/app exec tsc -b",
     "lint": "pnpm --filter @fearless-board/app lint",
