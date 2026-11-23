@@ -140,8 +140,8 @@ function makeNames(): NoteNames {
 // ── Item 2: NOTE_PROMPT ──────────────────────────────────────────────
 
 describe('NOTE_PROMPT', () => {
-  it('NOTE_PROMPT_VERSION equals 1', () => {
-    assert.strictEqual(NOTE_PROMPT_VERSION, 1)
+  it('NOTE_PROMPT_VERSION equals 2', () => {
+    assert.strictEqual(NOTE_PROMPT_VERSION, 2)
   })
 
   it('NOTE_PROMPT contains key instructions', () => {
@@ -226,7 +226,7 @@ function makeTestFacts(): NoteFacts {
       { player: 'Bob', role: 'mid', usualPicksAlreadyGonePct: 30, usualPicksAlreadyGone: ['Champion2'], likelyPicksNow: [{ champion: 'Champion4', likelihoodPct: 20, gamesPlayed: 8 }] },
     ],
     bansToConsider: [
-      { champion: 'Champion3', chanceOpponentPicksItPct: 35, chanceWePickItPct: 10, opponentPlayer: 'Bob' },
+      { champion: 'Champion3', chanceOpponentPicksItPct: 35, chanceWePickItPct: 10, gapPoints: 25, opponentPlayer: 'Bob' },
     ],
     picksThatAlsoDeny: [
       { champion: 'Champion5', ownPlayer: 'Alice', ownLikelihoodPct: 15, chanceOpponentPicksItPct: 25 },
@@ -431,3 +431,23 @@ describe('checkNote: missing title', () => {
     assert.ok(titleProblem.detail.includes('Bans and picks'))
   })
 })
+
+describe('checkNote: whole champion names', () => {
+  it('does not take "Vi" from inside "Viktor"', () => {
+    const facts = noteFactsFixtureWith('Viktor')
+    const note = { headline: 'Viktor is the likely pick.', points: [
+      { title: 'Their pools', text: 'Bob is most likely to pick Viktor.' },
+      { title: 'Our pools', text: 'Nothing stands out.' },
+      { title: 'Bans and picks', text: 'No ban stands out.' },
+    ] }
+    assert.deepEqual(checkNote(facts, note, ['Vi', 'Viktor']), [])
+  })
+})
+
+function noteFactsFixtureWith(champion: string) {
+  return {
+    team: 'A', opponent: 'B', game: 2, score: 'A 1 - 0 B', championsGoneForBothTeams: [],
+    ownPlayers: [], bansToConsider: [], picksThatAlsoDeny: [],
+    opponentPlayers: [{ player: 'Bob', role: 'mid' as const, usualPicksAlreadyGonePct: 0, usualPicksAlreadyGone: [], likelyPicksNow: [{ champion, likelihoodPct: 20, gamesPlayed: 3 }] }],
+  }
+}

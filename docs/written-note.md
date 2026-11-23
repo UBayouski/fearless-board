@@ -34,12 +34,12 @@ changed, and stop.
      ownPlayers / opponentPlayers: [{ player, role, usualPicksAlreadyGonePct, limitedHistory?: true,
          usualPicksAlreadyGone: [up to 3 names, the burned champions highest in startLikelihoods],
          likelyPicksNow: [up to 3 of { champion, likelihoodPct, gamesPlayed }] }],
-     bansToConsider: [up to 3 of { champion, chanceOpponentPicksItPct, chanceWePickItPct, opponentPlayer }],
+     bansToConsider: [up to 3 of { champion, chanceOpponentPicksItPct, chanceWePickItPct, gapPoints, opponentPlayer }],
          only rows where the gap is above 2 points, in the board's order,
      picksThatAlsoDeny: [up to 3 of { champion, ownPlayer, ownLikelihoodPct, chanceOpponentPicksItPct }] }
    ```
 
-2. `NOTE_PROMPT`: the system text, exactly as in the appendix, and `NOTE_PROMPT_VERSION = 1`.
+2. `NOTE_PROMPT`: the system text, exactly as in the appendix, and `NOTE_PROMPT_VERSION = 2`.
 3. `checkNote(facts, note, championNames)` returns a list of problems (empty means it passes):
    - a champion name from `championNames` that is in the note and not in the facts;
    - a percentage in the note ("51%") whose number is not a value in the facts;
@@ -122,6 +122,7 @@ Rules:
 - Use only names and numbers that appear in the facts. Never add a champion, a player, a number or a fact from your own knowledge of the game.
 - Never write a field name from the JSON. Say it in words: "has lost 51% of his usual picks", "a 25% chance".
 - At most two players per point and at most five percentages in the whole note.
+- For a ban you may quote "gapPoints", the difference between the two chances, as "an 8-point gap" (never with a percent sign). Do not work out any other number yourself.
 - Do not predict who wins, and do not say that a team is favoured, ahead, or at an advantage or disadvantage. The score may be stated.
 - Do not give reasons from game knowledge (matchups, synergy, meta strength).
 - Do not use "he", "his", "she" or "her" for a player; repeat the name or use "they".

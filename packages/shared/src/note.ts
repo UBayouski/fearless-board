@@ -26,6 +26,8 @@ export interface NoteBanFacts {
   champion: string
   chanceOpponentPicksItPct: number
   chanceWePickItPct: number
+  /** chanceOpponentPicksItPct minus chanceWePickItPct, so the model does not have to subtract. */
+  gapPoints: number
   opponentPlayer: string
 }
 
@@ -58,7 +60,7 @@ export interface NoteProblem {
 
 // ── Prompt ───────────────────────────────────────────────────────────
 
-export const NOTE_PROMPT_VERSION = 1
+export const NOTE_PROMPT_VERSION = 2
 
 export const NOTE_PROMPT = `You write a short pre-game note for the coach of one League of Legends team in a Fearless Draft series (a champion picked by either team in an earlier game is gone for both teams for the rest of the series).
 You get facts as JSON, computed by a planning board. "We" is the team in "team".
@@ -70,6 +72,7 @@ Rules:
 - Use only names and numbers that appear in the facts. Never add a champion, a player, a number or a fact from your own knowledge of the game.
 - Never write a field name from the JSON. Say it in words: "has lost 51% of his usual picks", "a 25% chance".
 - At most two players per point and at most five percentages in the whole note.
+- For a ban you may quote "gapPoints", the difference between the two chances, as "an 8-point gap" (never with a percent sign). Do not work out any other number yourself.
 - Do not predict who wins, and do not say that a team is favoured, ahead, or at an advantage or disadvantage. The score may be stated.
 - Do not give reasons from game knowledge (matchups, synergy, meta strength).
 - Do not use "he", "his", "she" or "her" for a player; repeat the name or use "they".
@@ -127,6 +130,7 @@ export function noteFacts(
         champion: names.champion(entry.championId),
         chanceOpponentPicksItPct: Math.round(entry.threatFromOpponent * 100),
         chanceWePickItPct: Math.round(entry.threatFromOwn * 100),
+        gapPoints: gap,
         opponentPlayer: oppPlayer,
       })
       if (bansToConsider.length >= 3) break
@@ -271,7 +275,9 @@ export function checkNote(
 
   // 1. Champion name in note but not in facts
   for (const champName of championNames) {
-    if (allText.includes(champName)) {
+    // Whole names only: "Vi" must not match inside "Viktor"
+    const escaped = champName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`(?<![\\w'])${escaped}(?![\\w])`, 'u').test(allText)) {
       // Check if this champion is in the facts
       const inFacts = championInFacts(facts, champName)
       if (!inFacts) {
@@ -387,6 +393,7 @@ function getAllPercentages(facts: NoteFacts): Set<number> {
   for (const b of facts.bansToConsider) {
     set.add(b.chanceOpponentPicksItPct)
     set.add(b.chanceWePickItPct)
+    set.add(b.gapPoints)
   }
   for (const d of facts.picksThatAlsoDeny) {
     set.add(d.ownLikelihoodPct)

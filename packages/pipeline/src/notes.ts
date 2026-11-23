@@ -184,7 +184,6 @@ async function callGemini(facts: NoteFacts): Promise<{ note: WrittenNote; inputT
   }
 
   let lastError = ''
-  let lastStatus = 0
   for (let attempt = 0; attempt < 4; attempt++) {
     if (attempt > 0) {
       const delay = 1000 * Math.pow(2, attempt - 1)
@@ -201,8 +200,6 @@ async function callGemini(facts: NoteFacts): Promise<{ note: WrittenNote; inputT
         },
         body: JSON.stringify(body),
       })
-
-      lastStatus = response.status
 
       if (response.status === 429 || response.status >= 500) {
         lastError = `HTTP ${response.status}`
@@ -227,7 +224,8 @@ async function callGemini(facts: NoteFacts): Promise<{ note: WrittenNote; inputT
       return { note, inputTokens, outputTokens }
     } catch (e) {
       lastError = String(e)
-      if (lastStatus !== 429 && lastStatus < 500) throw e
+      // A rejected request stops the run; a network error or a broken reply is tried again
+      if (fatal) throw e
     }
   }
 
