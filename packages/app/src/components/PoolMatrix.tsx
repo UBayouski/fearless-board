@@ -42,43 +42,29 @@ export function PoolMatrix({
 }) {
   const { burnedByGame, players } = plan
 
-  // Build revealed pick map: for each player, what champion they actually picked and its rank
-  const revealedPickMap = useMemo(() => {
+  const reveal = useMemo(() => {
     if (!revealedGame) return undefined
-    const map = new Map<string, { championId: string; rank: number } | null>()
-    for (const [, roleMap] of players) {
-      for (const [, gp] of roleMap) {
-        // Find this player's actual pick in the revealed game
-        const actualPick = revealedGame.picks.find(p => p.playerId === gp.playerId)
-        if (!actualPick) continue
-        const rank = gp.likelihoods.findIndex(l => l.championId === actualPick.championId) + 1
-        if (rank > 0) {
-          map.set(gp.playerId, { championId: actualPick.championId, rank })
-        } else {
-          map.set(gp.playerId, null)
-        }
-      }
-    }
-    return map
-  }, [revealedGame, players])
-
-  // Reveal summary: count picks in pool
-  const revealSummary = useMemo(() => {
-    if (!revealedPickMap) return null
+    const lineup = [
+      ...players.flatMap(([, roles]) => Array.from(roles.values())),
+      ...plan.unknownRolePlayers.flatMap(([, group]) => group),
+    ]
+    const byPlayer = new Map<string, { championId: string; rank: number }>()
     let inPool = 0
-    let total = 0
-    for (const [, val] of revealedPickMap) {
-      total++
-      if (val !== null) inPool++
+    for (const pick of revealedGame.picks) {
+      const player = lineup.find(p => p.playerId === pick.playerId)
+      if (!player) continue
+      const rank = player.likelihoods.findIndex(l => l.championId === pick.championId) + 1
+      byPlayer.set(player.playerId, { championId: pick.championId, rank })
+      if (player.pool.credible.some(c => c.championId === pick.championId)) inPool++
     }
-    return { inPool, total }
-  }, [revealedPickMap])
+    return { byPlayer, inPool, total: byPlayer.size }
+  }, [revealedGame, players, plan.unknownRolePlayers])
 
   return (
     <>
-      {revealSummary && (
+      {reveal && (
         <div className="reveal-summary">
-          {revealSummary.inPool} of {revealSummary.total} picks came from the available pools
+          {reveal.inPool} of {reveal.total} picks came from the available pools
         </div>
       )}
       <div className="pool-matrix">
@@ -118,6 +104,7 @@ export function PoolMatrix({
               return (
                 <div key={teamId} className={`pool-matrix-cell ${isOtherTeam ? 'pool-matrix-other-team' : ''}`}>
                   <PoolMatrixCell
+                    teamName={teamMap.get(teamId)?.name ?? teamId}
                     playerName={gp.playerName}
                     playerId={gp.playerId}
                     role={gp.role}
@@ -125,7 +112,7 @@ export function PoolMatrix({
                     burnedByGame={burnedByGame}
                     championMap={championMap}
                     seriesDate={draft.scheduledStart}
-                    revealedPick={revealedPickMap?.get(gp.playerId)}
+                    revealedPick={reveal?.byPlayer.get(gp.playerId)}
                     likelihoods={gp.likelihoods}
                     priorGames={gp.priorGames}
                     substitute={gp.substitute}
@@ -160,6 +147,7 @@ export function PoolMatrix({
                     {unknownGps.map((gp) => (
                       <PoolMatrixCell
                         key={gp.playerId}
+                        teamName={teamMap.get(teamId)?.name ?? teamId}
                         playerName={gp.playerName}
                         playerId={gp.playerId}
                         role={null}
@@ -167,7 +155,7 @@ export function PoolMatrix({
                         burnedByGame={burnedByGame}
                         championMap={championMap}
                         seriesDate={draft.scheduledStart}
-                        revealedPick={revealedPickMap?.get(gp.playerId)}
+                        revealedPick={reveal?.byPlayer.get(gp.playerId)}
                         likelihoods={gp.likelihoods}
                         priorGames={gp.priorGames}
                         substitute={gp.substitute}

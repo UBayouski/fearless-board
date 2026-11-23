@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SeriesDraft, WrittenNote } from '@fearless-board/shared'
-import type { Load } from './data'
-import { loadAll } from './data'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { PickModel, SeriesDraft, WrittenNote } from '@fearless-board/shared'
+import type { Load, SeriesWithPlans } from './data'
+import { buildPlanFor, dataUrl, loadAll, loadSeries } from './data'
 import { parseHash, setHash } from './route'
 import { SeriesPicker } from './components/SeriesPicker'
 import { SeriesBoard } from './components/SeriesBoard'
@@ -11,7 +11,7 @@ import './index.css'
 async function loadNotes(seriesId: string, manifestNotes?: { model: string; count: number }) {
   if (!manifestNotes) return null
   try {
-    const r = await fetch(`${import.meta.env.BASE_URL}data/notes/${seriesId}.json`)
+    const r = await fetch(dataUrl(`notes/${seriesId}.json`))
     if (!r.ok) return null
     const data = await r.json() as { model: string; promptVersion: number; games: Record<string, Record<string, WrittenNote>> }
     return { model: data.model, games: data.games }
@@ -23,7 +23,7 @@ async function loadNotes(seriesId: string, manifestNotes?: { model: string; coun
 // 6: Load backtest stats for the footer
 async function loadBacktest() {
   try {
-    const r = await fetch(`${import.meta.env.BASE_URL}data/backtest.json`)
+    const r = await fetch(dataUrl('backtest.json'))
     return await r.json() as {
       summary: { inPool: number; inPool20: number; gameCount: number }
       model?: { groups?: Array<{ name: string; model: { top5: number; top10: number }; gamesPlayed: { top5: number; top10: number } }> }
@@ -53,12 +53,21 @@ function App() {
   const [manifestNotes, setManifestNotes] = useState<{ model: string; count: number } | undefined>(undefined)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // Full mode: model loaded from model.json
+  const [loadedModel, setLoadedModel] = useState<PickModel | undefined>()
+
   useEffect(() => {
     loadAll().then((l) => {
       setLoad(l)
       // 3.5: Check if manifest says notes exist
       if (l.state === 'ready') {
         setManifestNotes(l.manifest.notes)
+        // In full mode, load the model
+        if (l.mode === 'full') {
+          fetch(dataUrl('model.json')).then(async (r) => {
+            if (r.ok) setLoadedModel(await r.json())
+          }).catch(() => {})
+        }
       }
     })
     loadBacktest().then((bt) => {
@@ -103,6 +112,26 @@ function App() {
     return () => { cancelled = true }
   }, [selectedSeries, manifestNotes])
 
+  // Load series file (draft + plans) when selected
+  const [seriesWithPlans, setSeriesWithPlans] = useState<SeriesWithPlans | null>(null)
+  useEffect(() => {
+    if (!selectedSeries) return
+    let cancelled = false
+    loadSeries(selectedSeries).then((data) => {
+      if (cancelled) return
+      setSeriesWithPlans(data)
+      setSeriesDraft(data)
+      setSeriesError(data ? null : 'Series not found')
+    })
+    return () => { cancelled = true }
+  }, [selectedSeries])
+
+  // The plan source: computed in full mode, read from the series file in demo mode
+  const planFor = useMemo(
+    () => buildPlanFor(load, loadedModel, seriesDraft, seriesWithPlans),
+    [load, loadedModel, seriesDraft, seriesWithPlans],
+  )
+
   // 6: Restore from URL hash on load and on hashchange; default to most recent best-of-five
   useEffect(() => {
     const handleHash = () => {
@@ -112,20 +141,28 @@ function App() {
         setSelectedGame(gameNumber)
         setSeriesError(null)
         setSeriesDraft(null)
-        fetch(`${import.meta.env.BASE_URL}data/${seriesId}.json`)
-          .then((r) => r.json() as Promise<SeriesDraft>)
-          .then((d) => setSeriesDraft(d))
-          .catch((err) => setSeriesError(String(err)))
       } else {
-        // 7: Default to most recent best-of-five where all 10 players have 20+ earlier games
         if (load.state === 'ready') {
+          // 3: Demo mode — open on first entry of series-index.json, game 3
+          if (load.mode === 'demo') {
+            // The newest series that went to five games, as in the full build; else the newest
+            const first = load.index.find((e) => e.gameCount === 5) ?? load.index[0]
+            if (first) {
+              const defaultGame = first.gameCount >= 3 ? 3 : first.gameCount >= 2 ? 2 : 1
+              setHash(first.seriesId, defaultGame)
+              setSelectedSeries(first.seriesId)
+              setSelectedGame(defaultGame)
+              setSeriesError(null)
+              setSeriesDraft(null)
+              return
+            }
+          }
+          // 7: Full mode — default to most recent best-of-five where all 10 players have 20+ earlier games
           const bo5s = load.index
             .filter((e) => e.gameCount === 5)
             .sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart))
-          // Check each series to find one where all players have 20+ prior games
           let bestSeries: typeof bo5s[0] | null = null
           for (const entry of bo5s) {
-            // Collect player IDs from this series in picks.json
             const playerIds = new Set<string>()
             for (const p of load.picks) {
               if (p.seriesId === entry.seriesId) {
@@ -135,7 +172,6 @@ function App() {
             if (playerIds.size < 10) continue
             let allHave20 = true
             for (const pid of playerIds) {
-              // Count unique series this player appeared in before the candidate
               const priorSeries = new Set(
                 load.picks
                   .filter((p) => p.playerId === pid && p.scheduledStart < entry.scheduledStart)
@@ -157,10 +193,6 @@ function App() {
             setSelectedGame(3)
             setSeriesError(null)
             setSeriesDraft(null)
-            fetch(`${import.meta.env.BASE_URL}data/${bestSeries.seriesId}.json`)
-              .then((r) => r.json() as Promise<SeriesDraft>)
-              .then((d) => setSeriesDraft(d))
-              .catch((err) => setSeriesError(String(err)))
             return
           }
         }
@@ -175,7 +207,7 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHash)
   }, [load])
 
-  const loadSeries = useCallback(
+  const loadSeriesCallback = useCallback(
     (seriesId: string) => {
       setSelectedSeries(seriesId)
       setSelectedGame(null)
@@ -183,10 +215,6 @@ function App() {
       setSeriesDraft(null)
       setPanelOpen(false)
       setHash(seriesId, 1)
-      fetch(`${import.meta.env.BASE_URL}data/${seriesId}.json`)
-        .then((r) => r.json() as Promise<SeriesDraft>)
-        .then((d) => setSeriesDraft(d))
-        .catch((err) => setSeriesError(String(err)))
     },
     [],
   )
@@ -236,11 +264,18 @@ function App() {
           </button>
           {panelOpen && (
             <div className="series-selector-panel">
+              {/* 4: Demo line */}
+              {load.mode === 'demo' && (
+                <p className="demo-line">
+                  Demo: {load.index.length} featured series out of {load.manifest.seriesCount}.
+                  Run the project locally with the hackathon data for all of them.
+                </p>
+              )}
               <SeriesPicker
                 index={load.index}
                 teamMap={load.teamMap}
                 selectedId={selectedSeries}
-                onSelect={loadSeries}
+                onSelect={loadSeriesCallback}
               />
             </div>
           )}
@@ -253,7 +288,7 @@ function App() {
           <SeriesBoard
             key={`${seriesDraft.seriesId}-${selectedGame}`}
             draft={seriesDraft}
-            picks={load.picks}
+            planFor={planFor}
             teamMap={load.teamMap}
             championMap={load.championMap}
             playerMap={load.playerMap}

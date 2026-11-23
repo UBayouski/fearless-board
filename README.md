@@ -152,6 +152,21 @@ GEMINI_MODEL=gemini-3.8-flash
 
 Then run `pnpm data:notes`. The command uses a paid Gemini project; prompts are not used to improve Google's products. Use `--limit N` to cap new API calls.
 
+## Two builds
+
+The data licence forbids redistributing the data or any derived dataset that "still contains or allows reconstruction" of it. So there are two builds:
+
+- **Full (local):** `pnpm data` writes every pick and ban of 1,737 games. The app computes game plans in the browser from `picks.json` and `model.json`. This build is for development and for judges who run the project against their own copy of the data. It must never be deployed.
+
+- **Demo (hosted):** `pnpm data:demo` selects 20 featured series, pre-computes their game plans, and writes a small data folder (`data-demo/`). No `picks.json`, no `model.json`. `pnpm build:demo` builds the app against this folder into `dist-demo/` and runs safety checks. Only `dist-demo` is ever deployed.
+
+```bash
+pnpm data          # build full aggregates from match data
+pnpm data:demo     # build demo data from the full output
+pnpm build         # production build (full)
+pnpm build:demo    # demo build (safe to deploy)
+```
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE). The licence covers this code only, not the match data.

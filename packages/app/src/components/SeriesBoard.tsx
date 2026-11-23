@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useReducer, useState } from 'react'
-import type { ChampionRef, DraftActionInput, GameDraft, GamePlan, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef, WrittenNote } from '@fearless-board/shared'
-import { gamePlan as computeGamePlan, DRAFT_ORDER, conditionLikelihoods } from '@fearless-board/shared'
+import { useMemo, useReducer, useState } from 'react'
+import type { ChampionRef, DraftActionInput, GameDraft, GamePlan, PlayerRef, SeriesDraft, TeamRef, WrittenNote } from '@fearless-board/shared'
+import { DRAFT_ORDER, conditionLikelihoods } from '@fearless-board/shared'
 import { draftReducer, actingTeam, liveGamePlan, firstTeamOfGame, type DraftSession, type DraftEvent, type DraftContext } from '@fearless-board/shared'
+import type { PlanFor } from '../data'
 import { BurnedStrip } from './BurnedStrip'
 import { CompactHistoryCard } from './CompactHistoryCard'
 import { GameColumn } from './GameColumn'
@@ -92,20 +93,19 @@ function createInitialSession(draft: SeriesDraft, game: GameDraft): DraftSession
 
 export function SeriesBoard({
   draft,
-  picks,
+  planFor,
   teamMap,
   championMap,
   playerMap,
   selectedGame,
   onSelectGame,
   backtestStats,
-  model: propModel,
   initialSession, // for tests only
   initialCostChampion, // for tests only
   notesData,
 }: {
   draft: SeriesDraft
-  picks: PickRow[]
+  planFor: PlanFor
   teamMap: Map<string, TeamRef>
   championMap: Map<string, ChampionRef>
   playerMap: Map<string, PlayerRef>
@@ -118,8 +118,6 @@ export function SeriesBoard({
     gamesPlayedTop10?: number
     gameCount?: number
   }
-  /** Optional model prop (for testing); when absent, loaded via fetch. */
-  model?: PickModel
   /** Optional initial draft session (for tests only). */
   initialSession?: DraftSession
   /** Optional champion preselected for "What does a pick cost?" (for tests only). */
@@ -133,6 +131,7 @@ export function SeriesBoard({
     return draft.games.length
   })()
 
+  const [perspective, setPerspective] = useState<string | null>(null)
   const [revealedGames, setRevealedGames] = useState<Set<number>>(new Set())
 
   // Draft mode state
@@ -237,25 +236,8 @@ export function SeriesBoard({
     dispatch({ type: 'replayNext' })
   }
 
-  // Load model (shared with PoolMatrix and LeveragePanel)
-  const [loadedModel, setLoadedModel] = useState<PickModel | undefined>()
-  const model = propModel ?? loadedModel
-  useEffect(() => {
-    if (propModel) return // model provided as prop, skip fetch
-    fetch(`${import.meta.env.BASE_URL}data/model.json`).then(async (r) => {
-      if (r.ok) setLoadedModel(await r.json())
-    }).catch(() => {})
-  }, [propModel])
-
-  // Compute gamePlan once (memoised on series, game number, and model)
-  const plan = useMemo(() => {
-    if (!model) return undefined
-    const playerRole = new Map<string, Role | null>()
-    for (const [id, p] of playerMap) {
-      playerRole.set(id, p.role)
-    }
-    return computeGamePlan(draft, gameNumber, picks, model, playerRole)
-  }, [draft, gameNumber, picks, model, playerMap])
+  // 2: Get plan from planFor (provided by App — either computed or decoded)
+  const plan = planFor(gameNumber)
 
   // 5.1: Use liveGamePlan in draft mode for conditioned likelihoods and leverage
   // (6.1.4: liveGamePlan takes only plan and session)
@@ -337,6 +319,9 @@ export function SeriesBoard({
     return result
   }, [draftMode, plan, session])
 
+  const planningTeam = perspective ?? session.firstTeamId
+  const ban = plan?.leverage.get(planningTeam)?.leverage[0]
+  const target = ban?.opponentHits.reduce((best, hit) => hit.probability > best.probability ? hit : best, ban.opponentHits[0])
   const t0 = teamMap.get(draft.teamIds[0])
   const t1 = teamMap.get(draft.teamIds[1])
   const name0 = t0?.name ?? draft.teamIds[0]
@@ -410,6 +395,19 @@ export function SeriesBoard({
       </div>
 
       {/* ── Game buttons and reveal / draft buttons, one row ─ */}
+      {!draftMode && !revealedGames.has(gameNumber) && plan && (
+        <section className="decision-card" aria-label="Ban recommendation">
+          <label>Ban outlook for <select value={planningTeam} onChange={e => setPerspective(e.target.value)}>
+            {draft.teamIds.map(id => <option key={id} value={id}>{teamMap.get(id)?.name ?? id}</option>)}
+          </select></label>
+          {ban && Math.round(ban.leverage * 100) > 2 ? <>
+            <h2>Consider banning {championMap.get(ban.championId)?.name ?? ban.championId}</h2>
+            <p>Opponent pick likelihood <strong>{Math.round(ban.threatFromOpponent * 100)}%</strong>
+              {target && <> · {target.playerName} {Math.round(target.probability * 100)}%</>}
+              {' · '}Your team <strong>{Math.round(ban.threatFromOwn * 100)}%</strong></p>
+          </> : <h2>No ban stands out.</h2>}
+        </section>
+      )}
       <div className="game-controls">
       <div className="game-stepper">
         {draft.games.map((g) => (
@@ -432,7 +430,7 @@ export function SeriesBoard({
           return (
             <div className="reveal-section">
               <button
-                className="reveal-btn"
+                className="draft-btn-inline"
                 onClick={() => {
                   const next = new Set(revealedGames)
                   next.add(selectedUpcoming.gameNumber)
@@ -443,7 +441,7 @@ export function SeriesBoard({
               </button>
               {!draftMode && (
                 <button
-                  className="draft-btn-inline"
+                  className="reveal-btn"
                   onClick={() => setDraftMode(true)}
                 >
                   Draft Game {selectedUpcoming.gameNumber}

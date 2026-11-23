@@ -79,6 +79,7 @@ function roleLabel(role: Role | null): string {
 
 export function PoolMatrixCell({
   playerName,
+  teamName,
   playerId,
   role,
   pool,
@@ -97,6 +98,7 @@ export function PoolMatrixCell({
   lastRemoved,
   replayRank,
 }: {
+  teamName?: string
   playerName: string
   playerId: string
   role: Role | null
@@ -183,6 +185,8 @@ export function PoolMatrixCell({
   const isUnlisted = useModel && revealedPick != null && !revealedInTop10 && !revealedInAlsoPlayed
 
   // For "Also played" collapsible
+  const [showTen, setShowTen] = useState(false)
+  const visiblePicks = top10.filter((entry, i) => showTen || i < 3 || entry.championId === revealedChampId)
   const [expanded, setExpanded] = useState(false)
 
   // Max probability for comfort bar
@@ -199,7 +203,7 @@ export function PoolMatrixCell({
       <div className="pool-cell pool-cell-picked">
         <div className="pool-cell-header">
           <span className="pool-cell-name">{playerName}</span>
-          <span className="pool-cell-role">{roleLabel(role)}</span>
+          <span className="pool-cell-role">{roleLabel(role)}<span className="mobile-team"> · {teamName}</span></span>
         </div>
         <div className="pool-picked-note">
           <span className="pool-picked-champ">
@@ -221,7 +225,7 @@ export function PoolMatrixCell({
           {playerName}
           {substitute && <span className="pool-substitute-label"> substitute</span>}
         </span>
-        <span className="pool-cell-role">{roleLabel(role)}</span>
+        <span className="pool-cell-role">{roleLabel(role)}<span className="mobile-team"> · {teamName}</span></span>
       </div>
       {isPlaceholder || isLowHistory ? (
         <div className="pool-placeholder-note">
@@ -260,7 +264,7 @@ export function PoolMatrixCell({
       )}
 
       {/* ── Reveal: new pick (no model) ────────────────────── */}
-      {!useModel && hasReveal && isNewPick && (
+      {!useModel && hasReveal && (isNewPick || (revealedChampId && !poolMap.has(revealedChampId))) && (
         <div className="pool-cell-section">
           <button type="button" className="champ-tile-btn pool-new" aria-label={`${championMap.get(revealedChampId!)?.name ?? revealedChampId}, new pick`}>
             {championMap.get(revealedChampId!)?.name ?? revealedChampId} <small>new</small>
@@ -271,7 +275,7 @@ export function PoolMatrixCell({
       {/* ── Top 10 from model ──────────────────────────────── */}
       {useModel && top10.length > 0 && (
         <div className="pool-cell-section">
-          {top10.map((l) => {
+          {visiblePicks.map((l) => {
             const champ = championMap.get(l.championId)
             const poolEntry = poolMap.get(l.championId)
             const played = poolEntry !== undefined
@@ -311,6 +315,11 @@ export function PoolMatrixCell({
       )}
 
       {/* ── 6.2.3: Last removed champion — struck tile for one step ── */}
+      {top10.length > 3 && (
+        <button type="button" className="also-played-toggle" aria-expanded={showTen} onClick={() => setShowTen(!showTen)}>
+          {showTen ? 'Show top 3' : `Show top ${top10.length}`}
+        </button>
+      )}
       {lastRemoved && (
         <div className="pool-cell-section">
           <button type="button" className="champ-tile-btn draft-removed" aria-label={`${championMap.get(lastRemoved.championId)?.name ?? lastRemoved.championId}, ${lastRemoved.type}d`}>
@@ -335,9 +344,9 @@ export function PoolMatrixCell({
           <button type="button" className="also-played-toggle" onClick={() => setExpanded(!expanded)}>
             {expanded ? '▲' : '▼'} Also played: {alsoPlayed.length} more
           </button>
-          {expanded && (
+          {(expanded || revealedInAlsoPlayed) && (
             <div className="pool-cell-section">
-              {alsoPlayed.map((l) => {
+              {alsoPlayed.filter(l => expanded || l.championId === revealedChampId).map((l) => {
                 const champ = championMap.get(l.championId)
                 const poolEntry = poolMap.get(l.championId)
                 if (!poolEntry) return null

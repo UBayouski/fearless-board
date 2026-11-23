@@ -409,3 +409,7 @@
     transition: none;
   }
 }
+
+.mobile-team { display: none; }
+@media (max-width: 899px) { .mobile-team { display: inline; } }
+.champ-tile-btn .champ-tile-inner { font-size: .98rem; font-weight: 600; }

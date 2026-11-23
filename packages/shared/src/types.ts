@@ -69,6 +69,8 @@ export interface Manifest {
   players: PlayerRef[]
   /** Optional: notes model info, set by pnpm data:notes or preserved by pnpm data. */
   notes?: { model: string; count: number }
+  /** "demo" for the demo build; absent for the full build. */
+  mode?: 'demo'
 }
 
 /** One row per series for the series picker. */

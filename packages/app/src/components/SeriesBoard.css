@@ -208,11 +208,7 @@
   min-height: 0;
 }
 
-/* With note: max 300px; without note: max 220px */
-.briefing-row {
-  max-height: 300px;
-  overflow: hidden;
-}
+.briefing-row:not(:has(.note-block)) > .outlook-panel { grid-column: 1 / -1; }
 
 /* 2.4: Collapsed briefing row in draft mode */
 .briefing-collapsed {
@@ -316,11 +312,24 @@
   position: absolute;
   top: 100%;
   right: 0;
-  width: 28rem;
+  width: min(28rem, calc(100vw - 2rem));
+  box-sizing: border-box;
   max-height: 70vh;
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line);
+}
+
+/* 4: Demo line above the series list */
+.demo-line {
+  padding: 0.75rem 1rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+}
+
+.series-selector-panel {
   border-radius: 6px;
   padding: 0.75rem;
   z-index: 100;
@@ -345,3 +354,15 @@
   color: var(--muted);
   font-style: italic;
 }
+
+.decision-card {
+  border-left: 3px solid var(--ember);
+  background: var(--surface);
+  padding: .75rem 1rem;
+  margin-bottom: .75rem;
+}
+.decision-card label, .decision-card p { color: var(--muted); font-size: .88rem; }
+.decision-card select { font: inherit; color: var(--text); background: var(--surface-2); }
+.decision-card h2 { font: 600 clamp(1.55rem, 3vw, 2.4rem)/1.1 'Barlow Condensed', sans-serif; margin: .3rem 0; }
+.decision-card p { margin: 0; }
+.decision-card strong { color: var(--text); }

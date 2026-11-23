@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToReadableStream } from 'react-dom/server'
 import { SeriesBoard } from './SeriesBoard'
-import { trainPickModel, draftReducer, type DraftSession } from '@fearless-board/shared'
-import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role } from '@fearless-board/shared'
+import { trainPickModel, gamePlan as computeGamePlan, draftReducer, encodePlan, decodePlan, type DraftSession } from '@fearless-board/shared'
+import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role, GamePlan } from '@fearless-board/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -156,19 +156,45 @@ for (let i = 0; i < 50; i++) {
 }
 const model = trainPickModel(examples)
 
+// Build planFor from computed plans (full mode)
+const playerRole = new Map<string, Role | null>()
+for (const [id, p] of playerMap) {
+  playerRole.set(id, p.role)
+}
+const plans: Record<number, GamePlan> = {}
+for (const game of draft.games) {
+  plans[game.gameNumber] = computeGamePlan(draft, game.gameNumber, picks, model, playerRole)
+}
+const planFor = (gameNumber: number): GamePlan | null => plans[gameNumber] ?? null
+
+// Build planFor from encoded plans (demo mode)
+const encodedPlans: Record<number, any> = {}
+for (const game of draft.games) {
+  encodedPlans[game.gameNumber] = encodePlan(plans[game.gameNumber])
+}
+const decodedPlanFor = (gameNumber: number): GamePlan | null => {
+  const encoded = encodedPlans[gameNumber]
+  if (!encoded) return null
+  return decodePlan(encoded)
+}
+
 // ── Test ─────────────────────────────────────────────────────────────
+
+/** The page without the unrounded widths of the comfort bars (a style value, not text). */
+function visibleText(html: string): string {
+  return html.replace(/(--comfort|width):[0-9.]+%/gu, '$1')
+}
 
 describe('SeriesBoard render', () => {
   it('renders both team names, ten player names, and the panel title', async () => {
     const el = React.createElement(SeriesBoard, {
       draft,
-      picks,
+      planFor,
       teamMap,
       championMap,
       playerMap,
       selectedGame: 2,
       onSelectGame: () => {},
-      model,
     })
 
     const html = await renderToString(el)
@@ -220,13 +246,12 @@ describe('SeriesBoard render', () => {
 
     const el = React.createElement(SeriesBoard, {
       draft,
-      picks,
+      planFor,
       teamMap,
       championMap,
       playerMap,
       selectedGame: 3,
       onSelectGame: () => {},
-      model,
       initialSession: session,
     })
 
@@ -275,8 +300,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -306,8 +331,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -330,8 +355,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -363,8 +388,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'pick', playerId: 'p1', championId: 'c8' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -388,8 +413,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -414,8 +439,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -429,8 +454,8 @@ describe('SeriesBoard render', () => {
 
   it('outlook: panel shows ten player names and burned shares', async () => {
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {}, model,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {},
     })
     const html = await renderToString(el)
 
@@ -453,8 +478,8 @@ describe('SeriesBoard render', () => {
 
   it('outlook: game 1 shows 0% burned', async () => {
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 1, onSelectGame: () => {}, model,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 1, onSelectGame: () => {},
     })
     const html = await renderToString(el)
 
@@ -465,8 +490,8 @@ describe('SeriesBoard render', () => {
 
   it('outlook: pick cost shows both team figures', async () => {
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {}, model, initialCostChampion: 'c2',
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {}, initialCostChampion: 'c2',
     })
     const html = await renderToString(el)
 
@@ -495,8 +520,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -524,8 +549,8 @@ describe('SeriesBoard render', () => {
     }
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {}, model, notesData,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {}, notesData,
     })
     const html = await renderToString(el)
 
@@ -547,8 +572,8 @@ describe('SeriesBoard render', () => {
 
   it('note: no note shows no block', async () => {
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {}, model,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 2, onSelectGame: () => {},
     })
     const html = await renderToString(el)
 
@@ -571,8 +596,8 @@ describe('SeriesBoard render', () => {
     session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft, picks, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
     })
     const html = await renderToString(el)
 
@@ -590,6 +615,76 @@ describe('SeriesBoard render', () => {
     // Draft bar is present
     expect(html).toContain('draft-bar')
 
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('item 6a: board renders from a decoded plan with same tile names and percentages', async () => {
+    const props = { draft, teamMap, championMap, playerMap, selectedGame: 2, onSelectGame: () => {} }
+    const html = await renderToString(React.createElement(SeriesBoard, { ...props, planFor: decodedPlanFor }))
+    const computed = await renderToString(React.createElement(SeriesBoard, { ...props, planFor }))
+
+    // The whole page is the same from both sources: every name, count and percentage.
+    // Only the unrounded bar widths differ, by the rounding of the stored probabilities.
+    expect(visibleText(html)).toBe(visibleText(computed))
+
+    // Both team names
+    expect(html).toContain('Team Alpha')
+    expect(html).toContain('Team Beta')
+
+    // Ten player names
+    const playerNames = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
+    for (const name of playerNames) {
+      expect(html).toContain(`Player ${name}`)
+    }
+
+    // At least one "% of recent" from role share labels
+    expect(html).toContain('% of recent')
+
+    // No NaN or undefined
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('item 6b: in demo mode with a draft action entered, ban panel and matrix still update', async () => {
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, planFor: decodedPlanFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
+    })
+    const html = await renderToString(el)
+    const computed = await renderToString(React.createElement(SeriesBoard, {
+      draft, planFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
+    }))
+    const before = await renderToString(React.createElement(SeriesBoard, {
+      draft, planFor: decodedPlanFor, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, initialSession: { firstTeamId: 'tA', actions: [], replay: null },
+    }))
+
+    // The live draft gives the same page from a decoded plan as from a computed one,
+    // and the ban changed the page
+    expect(visibleText(html)).toBe(visibleText(computed))
+    expect(visibleText(html)).not.toBe(visibleText(before))
+
+    // Draft bar renders
+    expect(html).toContain('draft-bar')
+    // Ban panel renders
+    expect(html).toContain('leverage-panel')
+    // Matrix renders
+    expect(html).toContain('pool-matrix')
+    // Exit Draft button
+    expect(html).toContain('Exit Draft')
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('undefined')
   })
