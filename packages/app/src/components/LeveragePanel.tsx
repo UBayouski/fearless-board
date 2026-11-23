@@ -22,12 +22,6 @@ export function LeveragePanel({
   model?: PickModel
   revealedGame?: GameDraft
 }) {
-  // If no model loaded yet, don't render
-  if (!model) return null
-
-  const game = draft.games.find((g) => g.gameNumber === gameNumber)
-  if (!game) return null
-
   const burned = burnedChampions(draft.games, gameNumber)
   const allChampionIds = draft.championsSeen ? new Set(draft.championsSeen) : new Set<string>()
   const available = new Set<string>()
@@ -35,9 +29,12 @@ export function LeveragePanel({
     if (!burned.has(c)) available.add(c)
   }
 
+  const game = draft.games.find((g) => g.gameNumber === gameNumber)
+
   // Build per-player likelihoods
   const likelihoodsByPlayer = useMemo(() => {
     const map = new Map<string, PickLikelihood[]>()
+    if (!game || !model) return map
     for (const pick of game.picks) {
       const player = playerMap.get(pick.playerId)
       if (!player || !player.role) {
@@ -57,11 +54,12 @@ export function LeveragePanel({
       map.set(pick.playerId, lks)
     }
     return map
-  }, [game.picks, playerMap, model, draft.scheduledStart, picks, burned, draft.roleCounts, allChampionIds])
+  }, [game?.picks, playerMap, model, draft.scheduledStart, picks, burned, draft.roleCounts, allChampionIds])
 
   // Build per-player pools (for denial picks)
   const playerPools = useMemo(() => {
     const pools = new Map<string, Map<string, number>>()
+    if (!game) return pools
     for (const pick of game.picks) {
       const pool = playerPool(picks, pick.playerId, draft.scheduledStart)
       const champGames = new Map<string, number>()
@@ -71,7 +69,10 @@ export function LeveragePanel({
       pools.set(pick.playerId, champGames)
     }
     return pools
-  }, [game.picks, picks, draft.scheduledStart])
+  }, [game?.picks, picks, draft.scheduledStart])
+
+  // If no model loaded yet or no game, don't render
+  if (!model || !game) return null
 
   // Compute leverage and denial for each team
   const teamData = useMemo(() => {

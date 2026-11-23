@@ -4,7 +4,7 @@ import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, PickModel, PickExample } from '@fearless-board/shared'
-import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool, calibrateModel, backtestLeverage } from '@fearless-board/shared'
+import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool, calibrateModel, backtestLeverage, backtestLiveDraft } from '@fearless-board/shared'
 import {
   parseCSV,
   type GameRow,
@@ -188,6 +188,7 @@ console.log(`  Series with match files: ${seriesWithActions}`)
 console.log(`  Games with draft actions: ${gamesWithActions}`)
 console.log(`  Games skipped (not in CSV, likely remakes): ${gamesSkippedNotInCsv}`)
 
+
 // Task 4: Reconcile — check draftActions picks match rosters.csv picks
 console.log('Reconciling picks between draft actions and rosters...')
 
@@ -362,6 +363,58 @@ for (const series of lolSeries) {
 
 // Sort drafts by scheduled start
 drafts.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart))
+
+// ── Live draft: discover turn order from data ──────────────────────────
+
+console.log('Analyzing draft turn order...')
+
+// Build a map: gameId -> sides
+const gameSidesMap = new Map<string, { blue: string; red: string }>()
+for (const draft of drafts) {
+  for (const game of draft.games) {
+    gameSidesMap.set(game.gameId, game.sides)
+  }
+}
+
+// Collect turn sequences: each is an array of "B-ban", "R-pick", etc.
+const turnSequences: string[][] = []
+for (const [gameId, actions] of actionsByGame) {
+  const sides = gameSidesMap.get(gameId)
+  if (!sides) continue
+  if (actions.length < 10) continue // skip incomplete drafts
+
+  const seq: string[] = []
+  for (const a of actions) {
+    const side = a.teamId === sides.blue ? 'B' : 'R'
+    const type = a.type === 'ban' ? 'b' : 'p'
+    seq.push(`${side}-${type}`)
+  }
+  turnSequences.push(seq)
+}
+
+// Find the most common sequence
+const seqCount = new Map<string, number>()
+const seqToActions = new Map<string, string[]>()
+for (const seq of turnSequences) {
+  const key = seq.join(',')
+  seqCount.set(key, (seqCount.get(key) ?? 0) + 1)
+  if (!seqToActions.has(key)) seqToActions.set(key, seq)
+}
+
+// Sort by count desc
+const sortedSeqs = [...seqCount.entries()].sort((a, b) => b[1] - a[1])
+const topSeq = sortedSeqs[0]
+const topSeqActions = seqToActions.get(topSeq[0])!
+
+console.log(`  Total games analyzed: ${turnSequences.length}`)
+console.log(`  Distinct sequences: ${seqCount.size}`)
+console.log(`  Most common sequence (${topSeq[1]} games, ${(topSeq[1] / turnSequences.length * 100).toFixed(1)}%):`)
+console.log(`  ${topSeqActions.join(' | ')}`)
+console.log(`  Top 3 sequences:`)
+for (const [key, count] of sortedSeqs.slice(0, 3)) {
+  const actions = seqToActions.get(key)!
+  console.log(`    ${count} games: ${actions.join(' | ')}`)
+}
 
 // Task 2e: Classify roles using end-of-game objectives + money + positions
 console.log('Classifying roles (2e method)...')
@@ -1069,6 +1122,28 @@ for (const group of [leverageResult.all, leverageResult.games2Plus]) {
   console.log(`    Meta      — Top 5: ${group.metaTop5}%, Top 8: ${group.metaTop8}%`)
 }
 
+// ── Section 2: Live draft backtest ──────────────────────────────────────
+
+console.log('\nRunning live draft backtest...')
+
+const liveDraftResult = backtestLiveDraft(
+  testSeries,
+  allPicks,
+  evalModel,
+  playerRole,
+)
+
+console.log('  Live draft backtest:')
+console.log(`  ${liveDraftResult.all.name} (${liveDraftResult.all.picks} picks):`)
+console.log(`    Conditioned   — Top 1: ${liveDraftResult.all.conditioned.top1}%, Top 3: ${liveDraftResult.all.conditioned.top3}%, Top 5: ${liveDraftResult.all.conditioned.top5}%`)
+console.log(`    Unconditioned — Top 1: ${liveDraftResult.all.unconditioned.top1}%, Top 3: ${liveDraftResult.all.unconditioned.top3}%, Top 5: ${liveDraftResult.all.unconditioned.top5}%`)
+console.log('  By pick position:')
+for (const pos of liveDraftResult.byPickPosition) {
+  console.log(`    ${pos.name} (${pos.conditioned.picks} picks):`)
+  console.log(`      Conditioned   — Top 1: ${pos.conditioned.top1}%, Top 3: ${pos.conditioned.top3}%, Top 5: ${pos.conditioned.top5}%`)
+  console.log(`      Unconditioned — Top 1: ${pos.unconditioned.top1}%, Top 3: ${pos.unconditioned.top3}%, Top 5: ${pos.unconditioned.top5}%`)
+}
+
 // Write backtest.json with model results
 const backtestOutput = {
   generatedAt: new Date().toISOString(),
@@ -1083,6 +1158,7 @@ const backtestOutput = {
     calibration,
   },
   leverage: leverageResult,
+  liveDraft: liveDraftResult,
 }
 writeFileSync(resolve(outputDir, 'backtest.json'), JSON.stringify(backtestOutput))
 

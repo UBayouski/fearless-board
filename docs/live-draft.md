@@ -40,6 +40,28 @@ and record the rank of the actual pick.
 
 A pick action in the data has a team and a champion; the player comes from the game's pick list.
 
+## 2b. Corrections after review of sections 1 and 2
+
+The pick backtest is right; an independent recomputation gives the same numbers (top 5: 74.2% conditioned
+against 62.8% before the draft).
+
+- **The draft order is hard-coded with blue side first, and that is wrong for half of the 2026 games.** In
+  the data, 1,477 of 1,721 complete drafts start with the blue side and 242 with the red side. All 242 are
+  from 2026 (LEC: 100 of 239, LCS: 143 of 210): the team that acts first is no longer tied to the side.
+  - Keep one turn pattern, expressed as "first team" and "second team", not as blue and red.
+  - `draftState` takes the team that acts first as input.
+  - In draft mode the user chooses which team acts first (default: the blue side), and the replay takes it
+    from the real draft.
+  - Add the share of red-first games per league and year to the pipeline's printed summary, and a test for
+    a red-first draft.
+- **The second-phase ban backtest is missing.** Section 2 asked for the share of second-phase bans in the
+  top 5 and top 8 of ban leverage on the conditioned lists, against the lists before the draft.
+- **A limit to state in the README:** the pick backtest ranks champions for the player who actually made
+  the pick. During a real draft the board does not know which role a team fills next; the user sees all
+  open players' lists.
+
+Stop after these corrections and report the second-phase ban table.
+
 ## 3. Board
 
 A "Draft game N" button next to "Reveal game N", only in planning mode. It opens draft mode for that game:
