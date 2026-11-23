@@ -3,6 +3,46 @@ import type { ChampionRef, PickLikelihood, PoolEntry, Role } from '@fearless-boa
 import { burnedGameShare } from '@fearless-board/shared'
 import './PoolMatrixCell.css'
 
+/** Small champion search input shared by ban search and pick search (6.2.2). */
+export function ChampionSearch({
+  placeholder,
+  onSelect,
+  unavailable,
+  championMap,
+}: {
+  placeholder: string
+  onSelect: (championId: string) => void
+  unavailable: Set<string>
+  championMap: Map<string, ChampionRef>
+}) {
+  const [query, setQuery] = useState('')
+  const filtered = query
+    ? Array.from(championMap.values())
+        .filter(c => c.name.toLowerCase().includes(query.toLowerCase()) && !unavailable.has(c.id))
+        .slice(0, 5)
+    : []
+  return (
+    <div className="champ-search">
+      <input
+        type="text"
+        className="champ-search-input"
+        placeholder={placeholder}
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+      />
+      {filtered.length > 0 && (
+        <div className="champ-search-results">
+          {filtered.map(c => (
+            <button key={c.id} type="button" className="champ-search-result" onClick={() => { onSelect(c.id); setQuery('') }}>
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function roleLabel(role: Role | null): string {
   return role ?? '?'
 }
@@ -23,6 +63,9 @@ export function PoolMatrixCell({
   onPick,
   unavailable,
   hasPicked,
+  pickedChampionId,
+  lastRemoved,
+  replayRank,
 }: {
   playerName: string
   playerId: string
@@ -37,8 +80,15 @@ export function PoolMatrixCell({
   substitute?: boolean
   isPickingPlayer?: boolean
   onPick?: (playerId: string, championId: string) => void
+  /** Champions unavailable (banned/picked this game). */
   unavailable?: Set<string>
   hasPicked?: boolean
+  /** 6.2.4: The champion this player picked, so the cell can show the name. */
+  pickedChampionId?: string
+  /** 6.2.3: The last removed champion for one-step visibility. */
+  lastRemoved?: { championId: string; type: 'ban' | 'pick' } | null
+  /** 6.2.5: Replay rank — rank in the list before the pick (0 = outside top 10). */
+  replayRank?: number
 }) {
   const totalGames = pool.credible.length + pool.burned.length
   const burnedCount = pool.burned.length
@@ -113,6 +163,27 @@ export function PoolMatrixCell({
   // Low-history player — fewer than 5 earlier games
   const isLowHistory = priorGames > 0 && priorGames < 5
 
+  // A player who has picked: the cell collapses to the pick
+  if (hasPicked) {
+    return (
+      <div className="pool-cell pool-cell-picked">
+        <div className="pool-cell-header">
+          <span className="pool-cell-name">{playerName}</span>
+          <span className="pool-cell-role">{roleLabel(role)}</span>
+        </div>
+        <div className="pool-picked-note">
+          <span className="pool-picked-champ">
+            {pickedChampionId ? (championMap.get(pickedChampionId)?.name ?? pickedChampionId) : ''}
+          </span>
+          <span className="pool-picked-label">
+            picked
+            {replayRank !== undefined ? (replayRank > 0 ? ` · rank ${replayRank} in the list before the pick` : ' · outside the top 10') : ''}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="pool-cell">
       <div className="pool-cell-header">
@@ -122,11 +193,7 @@ export function PoolMatrixCell({
         </span>
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
-      {hasPicked ? (
-        <div className="pool-picked-note">
-          <span className="pool-picked-label">picked</span>
-        </div>
-      ) : isPlaceholder || isLowHistory ? (
+      {isPlaceholder || isLowHistory ? (
         <div className="pool-placeholder-note">
           <div className="pool-placeholder-text">
             {isPlaceholder ? 'no earlier games in the data' : `${priorGames} earlier ${priorGames === 1 ? 'game' : 'games'} in the data`}
@@ -211,6 +278,25 @@ export function PoolMatrixCell({
             )
           })}
         </div>
+      )}
+
+      {/* ── 6.2.3: Last removed champion — struck tile for one step ── */}
+      {lastRemoved && (
+        <div className="pool-cell-section">
+          <button type="button" className="champ-tile-btn draft-removed" aria-label={`${championMap.get(lastRemoved.championId)?.name ?? lastRemoved.championId}, ${lastRemoved.type}d`}>
+            {championMap.get(lastRemoved.championId)?.name ?? lastRemoved.championId} <small>{lastRemoved.type === 'ban' ? 'banned' : 'picked'}</small>
+          </button>
+        </div>
+      )}
+
+      {/* ── 6.2.2: "Other champion" search for pick turns ── */}
+      {isPickingPlayer && onPick !== undefined && (
+        <ChampionSearch
+          placeholder="Other champion..."
+          onSelect={(championId) => onPick!(playerId, championId)}
+          unavailable={unavailable ?? new Set()}
+          championMap={championMap}
+        />
       )}
 
       {/* ── Also played: collapsible ───────────────────────── */}

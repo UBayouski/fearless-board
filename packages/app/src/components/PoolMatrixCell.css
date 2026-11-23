@@ -293,6 +293,16 @@
 
 .pool-picked-note {
   padding: 0.5rem 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+/* 6.2.4: Picked champion name */
+.pool-picked-champ {
+  font-size: 0.95rem;
+  color: var(--hit);
+  font-weight: 700;
 }
 
 .pool-picked-label {
@@ -300,6 +310,68 @@
   color: var(--hit);
   font-weight: 600;
   font-style: italic;
+}
+
+/* 6.2.3: Last removed champion — struck tile */
+.champ-tile-btn.draft-removed {
+  text-decoration: line-through;
+  border-left: 2px solid var(--ember);
+  color: var(--ember);
+  opacity: 0.8;
+}
+
+.champ-tile-btn.draft-removed small {
+  color: var(--ember);
+}
+
+/* 6.2.2: Champion search input */
+.champ-search {
+  position: relative;
+  margin-bottom: 0.3rem;
+}
+
+.champ-search-input {
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.champ-search-input:focus {
+  outline: 1px solid var(--blue-side);
+}
+
+.champ-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  margin-top: 2px;
+}
+
+.champ-search-result {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.champ-search-result:hover {
+  background: var(--surface-2);
 }
 
 .champ-tile-btn.draft-unavailable {

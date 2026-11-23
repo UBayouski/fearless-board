@@ -106,7 +106,14 @@ Leverage finds 26.6% of real bans in its top 8 against 21.1% for the plain 45-da
 | Pick 1 | 900 | 82.8% | 78.3% |
 | Pick 5 | 900 | 59.2% | 43.9% |
 
-Conditioning improves hit rates across all positions. Later picks gain more from conditioning — pick 5 improves by +15.3 percentage points at Top 5 — confirming that earlier bans and picks narrow the pool meaningfully.
+**Second-phase bans** on 2026+ games:
+
+| Group | Bans | Conditioned Leverage Top 8 | Unconditioned Top 8 |
+|---|---|---|---|
+| All games | 1,799 | 27.3% | 20.7% |
+| Games 2+ | 983 | 26.3% | 20.3% |
+
+**Limits:** The backtest ranks champions for the player who actually picked; during a real draft the board does not know which role a team fills next, so all open players' lists are shown.
 
 ## Licence
 

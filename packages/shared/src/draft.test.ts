@@ -257,7 +257,7 @@ describe('liveGamePlan', () => {
       actions: [{ type: 'ban', teamId: 'tA', championId: 'c2' }],
       replay: null,
     }
-    const live = liveGamePlan(plan, session, picks, model, playerRole, draft)
+    const live = liveGamePlan(plan, session)
 
     for (const [, roleMap] of live.players) {
       for (const [, gp] of roleMap) {
@@ -285,7 +285,7 @@ describe('liveGamePlan', () => {
       ],
       replay: null,
     }
-    const live = liveGamePlan(plan, session, picks, model, playerRole, draft)
+    const live = liveGamePlan(plan, session)
 
     // Find p1 across all roles and teams
     let p1gp = undefined

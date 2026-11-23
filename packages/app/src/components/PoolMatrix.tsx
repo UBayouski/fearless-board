@@ -16,6 +16,9 @@ export function PoolMatrix({
   draftConditioned,
   currentDraftSlot,
   onPick,
+  lastRemoved,
+  removedForPlayers,
+  replayPickRanks,
 }: {
   plan: GamePlan
   draft: SeriesDraft
@@ -24,9 +27,15 @@ export function PoolMatrix({
   gameNumber: number
   revealedGame?: GameDraft
   draftMode?: boolean
-  draftConditioned?: { unavailable: Set<string>; pickedPlayers: Set<string> } | null
+  draftConditioned?: { unavailable: Set<string>; pickedPlayers: Set<string>; pickedChampions: Map<string, string> } | null
   currentDraftSlot?: { slot: string; side: '1' | '2'; type: 'b' | 'p'; teamId: string } | null
   onPick?: (playerId: string, championId: string) => void
+  /** 6.2.3: The last removed champion for one-step visibility. */
+  lastRemoved?: { championId: string; type: 'ban' | 'pick' } | null
+  /** Players who had that champion in their top 10 just before it was removed. */
+  removedForPlayers?: Set<string>
+  /** 6.2.5: Replay pick ranks — playerId → rank (0 = outside top 10). */
+  replayPickRanks?: Map<string, number>
 }) {
   const { burnedByGame, players } = plan
 
@@ -98,6 +107,8 @@ export function PoolMatrix({
                 && currentDraftSlot?.teamId === teamId
                 && !draftConditioned?.pickedPlayers.has(gp.playerId)
               const playerHasPicked = draftConditioned?.pickedPlayers.has(gp.playerId) ?? false
+              const pickedChampionId = draftConditioned?.pickedChampions.get(gp.playerId)
+              const replayRank = replayPickRanks?.get(gp.playerId) ?? undefined
               return (
                 <div key={teamId} className="pool-matrix-cell">
                   <PoolMatrixCell
@@ -116,6 +127,9 @@ export function PoolMatrix({
                     onPick={isPickingPlayer ? onPick : undefined}
                     unavailable={draftMode ? draftConditioned?.unavailable : undefined}
                     hasPicked={playerHasPicked}
+                    pickedChampionId={pickedChampionId}
+                    lastRemoved={removedForPlayers?.has(gp.playerId) ? lastRemoved : undefined}
+                    replayRank={replayRank}
                   />
                 </div>
               )

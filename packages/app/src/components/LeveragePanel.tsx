@@ -7,12 +7,18 @@ export function LeveragePanel({
   teamMap,
   championMap,
   revealedGame,
+  onBan,
+  actingTeamId,
 }: {
   plan: GamePlan
   draft: SeriesDraft
   teamMap: Map<string, TeamRef>
   championMap: Map<string, ChampionRef>
   revealedGame?: GameDraft
+  /** Called when a ban row is clicked (6.2.1). */
+  onBan?: (championId: string) => void
+  /** The team acting on a ban turn (6.2.1). */
+  actingTeamId?: string
 }) {
   const { leverage, players } = plan
 
@@ -102,8 +108,16 @@ export function LeveragePanel({
                     for (const h of entry.ownHits) {
                       if ((playerPriorGames.get(h.playerId) ?? 0) < 20 && !limitedHistoryPlayers.includes(h.playerName)) limitedHistoryPlayers.push(h.playerName)
                     }
+                    // 6.2.1: On a ban turn, the acting team's ban rows are clickable buttons
+                    const isClickable = onBan !== undefined && actingTeamId === teamId
                     return (
-                      <div key={entry.championId} className="leverage-row">
+                      <button
+                        key={entry.championId}
+                        type="button"
+                        className={`leverage-row ${isClickable ? 'leverage-row-clickable' : ''}`}
+                        onClick={isClickable ? () => onBan(entry.championId) : undefined}
+                        aria-label={`${champ?.name ?? entry.championId}, net leverage +${net}${isClickable ? ', click to ban' : ''}`}
+                      >
                         <div className="leverage-row-left">
                           <span className="leverage-champ-name">{champ?.name ?? entry.championId}</span>
                           <span className={`leverage-net ${net > 0 ? 'leverage-net-positive' : ''}`}>+{net}</span>
@@ -121,7 +135,7 @@ export function LeveragePanel({
                             <span className="leverage-limited-history">limited history: {limitedHistoryPlayers.join(', ')}</span>
                           )}
                         </div>
-                      </div>
+                      </button>
                     )
                   })
                 })()}

@@ -29,11 +29,31 @@
   font-size: 0.8rem;
 }
 
-.draft-slots {
+/* 6.2.6: Two slot rows, one per team */
+.draft-team-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.draft-team-row-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text);
+  min-width: 8rem;
+  text-align: right;
+}
+
+.draft-team-slots {
+  display: flex;
   gap: 0.25rem;
-  margin-bottom: 0.5rem;
+  flex: 1;
+}
+
+.draft-phase-gap {
+  margin-left: 0.5rem;
 }
 
 .draft-slot {

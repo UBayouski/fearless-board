@@ -81,37 +81,50 @@ export function DraftBar({
         </select>
       </div>
 
-      {/* 20-slot turn sequence */}
-      <div className="draft-slots">
-        {DRAFT_ORDER.map((slot, i) => {
+      {/* 6.2.6: Two slot rows, one per team in the matrix's team order */}
+      {draft.teamIds.map((teamId) => {
+        const team = teamMap.get(teamId)
+        // Get this team's slots in turn order
+        const teamSlots = DRAFT_ORDER.map((slot, i) => ({ slot, index: i })).filter(({ slot }) => {
           const side = slot[0] as '1' | '2'
-          const type = slot[2] as 'b' | 'p'
-          const isCurrent = i === turnIndex
-          const action = i < actions.length ? actions[i] : null
-          const teamId = sideToTeam.get(side)
-          const team = teamId ? teamMap.get(teamId) : null
-          const isBlueSide = plan.game.sides?.blue === teamId
-          const sideColor = isBlueSide ? 'blue' : 'red'
+          const slotTeamId = sideToTeam.get(side)
+          return slotTeamId === teamId
+        })
+        return (
+          <div key={teamId} className="draft-team-row">
+            <span className="draft-team-row-label">{team?.name ?? teamId}</span>
+            <div className="draft-team-slots">
+              {teamSlots.map(({ slot, index: i }) => {
+                const type = slot[2] as 'b' | 'p'
+                const isCurrent = i === turnIndex
+                const action = i < actions.length ? actions[i] : null
+                const isBlueSide = plan.game.sides?.blue === teamId
+                const sideColor = isBlueSide ? 'blue' : 'red'
+                // Gap between phases: after slot 5 (6th ban) and after slot 11 (4th pick of first phase)
+                const phaseGap = (i === 5 || i === 11) ? 'draft-phase-gap' : ''
 
-          return (
-            <div
-              key={i}
-              className={`draft-slot draft-slot-${type} ${isCurrent ? 'draft-slot-current' : ''} ${action ? 'draft-slot-filled' : ''} draft-slot-${sideColor}`}
-              title={`${team?.name ?? teamId} ${type === 'b' ? 'ban' : 'pick'}`}
-            >
-              {action ? (
-                <span className="draft-slot-content">
-                  {championMap.get(action.championId)?.name ?? action.championId}
-                </span>
-              ) : (
-                <span className="draft-slot-placeholder">
-                  {type === 'b' ? 'B' : 'P'}
-                </span>
-              )}
+                return (
+                  <div
+                    key={i}
+                    className={`draft-slot draft-slot-${type} ${isCurrent ? 'draft-slot-current' : ''} ${action ? 'draft-slot-filled' : ''} draft-slot-${sideColor} ${phaseGap}`}
+                    title={`${team?.name ?? teamId} ${type === 'b' ? 'ban' : 'pick'}`}
+                  >
+                    {action ? (
+                      <span className="draft-slot-content">
+                        {championMap.get(action.championId)?.name ?? action.championId}
+                      </span>
+                    ) : (
+                      <span className="draft-slot-placeholder">
+                        {type === 'b' ? 'B' : 'P'}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
-      </div>
+          </div>
+        )
+      })}
 
       {/* Controls */}
       <div className="draft-controls">

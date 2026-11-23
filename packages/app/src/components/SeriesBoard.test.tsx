@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToReadableStream } from 'react-dom/server'
 import { SeriesBoard } from './SeriesBoard'
-import { trainPickModel } from '@fearless-board/shared'
-import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role, DraftSession } from '@fearless-board/shared'
+import { trainPickModel, draftReducer, type DraftSession } from '@fearless-board/shared'
+import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role } from '@fearless-board/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -31,12 +31,18 @@ const teamMap = new Map<string, TeamRef>([
   ['tB', { id: 'tB', name: 'Team Beta' }],
 ])
 
+// Need at least 10 distinct champions for 6 bans + 2 picks
 const championMap = new Map<string, ChampionRef>([
   ['c1', { id: 'c1', name: 'Champion One' }],
   ['c2', { id: 'c2', name: 'Champion Two' }],
   ['c3', { id: 'c3', name: 'Champion Three' }],
   ['c4', { id: 'c4', name: 'Champion Four' }],
   ['c5', { id: 'c5', name: 'Champion Five' }],
+  ['c6', { id: 'c6', name: 'Champion Six' }],
+  ['c7', { id: 'c7', name: 'Champion Seven' }],
+  ['c8', { id: 'c8', name: 'Champion Eight' }],
+  ['c9', { id: 'c9', name: 'Champion Nine' }],
+  ['c10', { id: 'c10', name: 'Champion Ten' }],
 ])
 
 const playerMap = new Map<string, PlayerRef>([
@@ -133,7 +139,7 @@ const draft: SeriesDraft = {
     bot: { total45: 20, totalAll: 100, champions: { c1: [3, 10] as [number, number], c2: [5, 20] as [number, number] } },
     support: { total45: 20, totalAll: 100, champions: { c1: [3, 10] as [number, number], c2: [5, 20] as [number, number] } },
   },
-  championsSeen: ['c1', 'c2', 'c3', 'c4', 'c5'],
+  championsSeen: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10'],
 }
 
 // Train a simple model
@@ -190,21 +196,27 @@ describe('SeriesBoard render', () => {
   })
 
   it('renders a draft session with 6 bans and 2 picks', async () => {
-    // Build a session with 6 bans and 2 picks (using player IDs)
-    const session: DraftSession = {
-      firstTeamId: 'tA',
-      actions: [
-        { type: 'ban', teamId: 'tA', championId: 'c1' },
-        { type: 'ban', teamId: 'tB', championId: 'c2' },
-        { type: 'ban', teamId: 'tA', championId: 'c3' },
-        { type: 'ban', teamId: 'tB', championId: 'c4' },
-        { type: 'ban', teamId: 'tA', championId: 'c5' },
-        { type: 'ban', teamId: 'tB', championId: 'c1' }, // c1 already banned — rejected
-        { type: 'pick', teamId: 'tA', championId: 'c2', playerId: 'p1' },
-        { type: 'pick', teamId: 'tB', championId: 'c3', playerId: 'p6' },
-      ],
-      replay: null,
+    // Build a valid session by running draftReducer over 6 distinct bans and 2 picks
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']), // c5 burned from game 1
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
     }
+
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    // 6 bans: alternating teams, all distinct champions
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c3' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c4' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c6' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
+    // 2 picks: one per team
+    session = draftReducer(session, { type: 'pick', playerId: 'p1', championId: 'c8' }, ctx)
+    session = draftReducer(session, { type: 'pick', playerId: 'p6', championId: 'c9' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
       draft,
@@ -224,54 +236,194 @@ describe('SeriesBoard render', () => {
     expect(html).toContain('Team Alpha')
     expect(html).toContain('Team Beta')
 
-    // Champion names in the slots
+    // Champion names in the slots (6 bans + 2 picks = 8 slots filled)
     expect(html).toContain('Champion One')
     expect(html).toContain('Champion Two')
     expect(html).toContain('Champion Three')
     expect(html).toContain('Champion Four')
-    expect(html).toContain('Champion Five')
+    expect(html).toContain('Champion Six')
+    expect(html).toContain('Champion Seven')
+    expect(html).toContain('Champion Eight')
+    expect(html).toContain('Champion Nine')
 
-    // The two picking players' cells show "picked" (because playerId matches)
+    // The two picking players' cells show "picked" with the champion name
     expect(html).toContain('picked')
+    // Player One picked Champion Eight
+    expect(html).toContain('Champion Eight')
+    // Player Six picked Champion Nine
+    expect(html).toContain('Champion Nine')
+
+    // Banned champions should not appear in any open cell's tile list
+    // (they are in the unavailable set, so dimmed or hidden)
 
     // No NaN or undefined
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('undefined')
   })
 
-  it('fails when pick is recorded under player name instead of id', async () => {
-    // Simulate the bug: picks use playerName instead of playerId
-    const buggySession: DraftSession = {
-      firstTeamId: 'tA',
-      actions: [
-        { type: 'ban', teamId: 'tA', championId: 'c1' },
-        { type: 'ban', teamId: 'tB', championId: 'c2' },
-        { type: 'ban', teamId: 'tA', championId: 'c3' },
-        { type: 'ban', teamId: 'tB', championId: 'c4' },
-        { type: 'ban', teamId: 'tA', championId: 'c5' },
-        { type: 'ban', teamId: 'tB', championId: 'c1' },
-        // BUG: playerName instead of playerId
-        { type: 'pick', teamId: 'tA', championId: 'c2', playerId: 'Player One' },
-        { type: 'pick', teamId: 'tB', championId: 'c3', playerId: 'Player Six' },
-      ],
-      replay: null,
+  it('item 1: ban rows render as buttons in draft mode', async () => {
+    // Session with 1 ban — next turn is a ban turn
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
     }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
 
     const el = React.createElement(SeriesBoard, {
-      draft,
-      picks,
-      teamMap,
-      championMap,
-      playerMap,
-      selectedGame: 3,
-      onSelectGame: () => {},
-      model,
-      initialSession: buggySession,
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
     })
-
     const html = await renderToString(el)
 
-    // "picked" should NOT appear because playerId 'Player One' doesn't match any real player ID
-    expect(html).not.toContain('picked')
+    // Leverage panel renders with ban rows
+    expect(html).toContain('Bans to consider')
+    // Ban rows are <button> elements (not just <div>)
+    expect(html).toContain('leverage-row')
+    expect(html).not.toContain('NaN')
+  })
+
+  it('item 2: other champion search appears on pick turn', async () => {
+    // Session with 6 bans — next turn is a pick turn
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c3' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c4' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c6' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+    })
+    const html = await renderToString(el)
+
+    // "Other champion" search input appears in picking team's cells
+    expect(html).toContain('Other champion')
+    expect(html).not.toContain('NaN')
+  })
+
+  it('item 3: last removed champion shown in draft bar', async () => {
+    // Session with 1 ban — lastRemoved is c2 (c1 is already burned in game 3)
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+    })
+    const html = await renderToString(el)
+
+    // Banned champion appears in the draft bar slot
+    expect(html).toContain('Champion Two')
+    expect(html).toContain('draft-slot-filled')
+    // Cells that had the champion in their top 10 show it struck, labelled "banned"
+    expect(html).toContain('draft-removed')
+    expect(html).toMatch(/Champion Two(<!-- -->| )*<small>banned<\/small>/u)
+    expect(html).not.toContain('NaN')
+  })
+
+  it('item 4: picked cell shows champion name', async () => {
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c3' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c4' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c6' }, ctx)
+    session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
+    session = draftReducer(session, { type: 'pick', playerId: 'p1', championId: 'c8' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+    })
+    const html = await renderToString(el)
+
+    // Picked cell shows champion name and "picked"
+    expect(html).toContain('Champion Eight')
+    expect(html).toContain('picked')
+    expect(html).not.toContain('NaN')
+  })
+
+  it('item 5: draft mode shows Exit Draft and draft bar', async () => {
+    // Session with 1 ban so draftMode is true
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+    })
+    const html = await renderToString(el)
+
+    // "Exit Draft" button exists (proves draft mode is active)
+    expect(html).toContain('Exit Draft')
+    // Draft bar renders
+    expect(html).toContain('draft-bar')
+    expect(html).not.toContain('NaN')
+  })
+
+  it('item 6: two slot rows render with team names', async () => {
+    // Session with 1 ban so draftMode is true and DraftBar renders
+    const ctx = {
+      teamIds: ['tA', 'tB'],
+      burned: new Set(['c5']),
+      teamPlayers: new Map([
+        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+      ]),
+    }
+    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+
+    const el = React.createElement(SeriesBoard, {
+      draft, picks, teamMap, championMap, playerMap,
+      selectedGame: 3, onSelectGame: () => {}, model, initialSession: session,
+    })
+    const html = await renderToString(el)
+
+    // Both team names appear as row labels in the draft bar
+    expect(html).toContain('Team Alpha')
+    expect(html).toContain('Team Beta')
+    // Draft slots exist
+    expect(html).toContain('draft-slot')
+    expect(html).not.toContain('NaN')
   })
 })

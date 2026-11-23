@@ -168,6 +168,12 @@
 
 .draft-btn-inline.replay:disabled {
   opacity: 0.4;
+}
+
+.draft-replay-group {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
   cursor: default;
 }
 

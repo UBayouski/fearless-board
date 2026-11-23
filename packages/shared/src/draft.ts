@@ -2,7 +2,7 @@
 
 import type {
   DraftActionInput, GamePlan, GamePlanPlayer, GamePlanTeamLeverage,
-  PickModel, PickRow, PlayerRef, Role, SeriesDraft,
+  PlayerRef, Role,
 } from './types.ts'
 import { DRAFT_ORDER, conditionLikelihoods, banLeverage, denialPicks } from './model.ts'
 
@@ -165,16 +165,13 @@ export function firstTeamOfGame(gameActions: DraftActionInput[]): string | null 
 
 /**
  * Build a GamePlan with conditioned likelihoods and recomputed leverage
- * for the current draft session state.
+ * for the current draft session state. Also returns the last removed champion
+ * so the UI can show it as a struck tile for one step.
  */
 export function liveGamePlan(
   plan: GamePlan,
   session: DraftSession,
-  _picks: readonly PickRow[],
-  _model: PickModel,
-  _playerRole: Map<string, Role | null>,
-  draft: SeriesDraft,
-): GamePlan {
+): GamePlan & { lastRemoved: { championId: string; type: 'ban' | 'pick' } | null } {
   // Derive unavailable champions and picked players from session actions
   const unavailable = new Set(plan.burned)
   const pickedPlayers = new Set<string>()
@@ -209,9 +206,10 @@ export function liveGamePlan(
   // Recompute leverage for each team
   const newLeverage = new Map<string, GamePlanTeamLeverage>()
   const roleOrder: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
+  const teamIds = plan.players.map(([tid]) => tid)
 
-  for (const teamId of draft.teamIds) {
-    const oppTeamId = draft.teamIds.find(t => t !== teamId)
+  for (const teamId of teamIds) {
+    const oppTeamId = teamIds.find(t => t !== teamId)
     if (!oppTeamId) continue
 
     const ownPlayersData = newPlayers.find(([tid]) => tid === teamId)?.[1]
@@ -245,10 +243,15 @@ export function liveGamePlan(
     newLeverage.set(teamId, { leverage: leverageEntries, denial: denialEntries })
   }
 
+  // 6.2.3: Track the last removed champion for one-step visibility
+  const lastAction = session.actions.length > 0 ? session.actions[session.actions.length - 1] : null
+  const lastRemoved = lastAction ? { championId: lastAction.championId, type: lastAction.type } : null
+
   return {
     ...plan,
     players: newPlayers,
     unknownRolePlayers: newUnknownRolePlayers,
     leverage: newLeverage,
+    lastRemoved,
   }
 }

@@ -215,7 +215,7 @@ function App() {
       <section className="board-full">
         {selectedSeries && seriesDraft ? (
           <SeriesBoard
-            key={seriesDraft.seriesId}
+            key={`${seriesDraft.seriesId}-${selectedGame}`}
             draft={seriesDraft}
             picks={load.picks}
             teamMap={load.teamMap}

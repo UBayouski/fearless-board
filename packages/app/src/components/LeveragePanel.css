@@ -72,6 +72,29 @@
   gap: 0.35rem;
   padding: 0.2rem 0;
   font-size: 0.8rem;
+  background: transparent;
+  border: none;
+  cursor: default;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+}
+
+/* 6.2.1: Clickable ban rows on a ban turn */
+.leverage-row-clickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.leverage-row-clickable:hover {
+  background: var(--surface-2);
+}
+
+.leverage-row-clickable:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: -2px;
+  border-radius: 3px;
 }
 
 .leverage-row-left {
