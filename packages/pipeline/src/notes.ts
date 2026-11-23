@@ -210,12 +210,15 @@ async function callGemini(facts: NoteFacts): Promise<{ note: WrittenNote; inputT
         // A request the API rejects will be rejected every time: stop the whole run
         const text = await response.text()
         fatal = new Error(`HTTP ${response.status}: ${text.slice(0, 300)}`)
-        throw fatal
+        break
       }
 
       const data: any = await response.json()
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!text) throw new Error('No text in response')
+      if (!text) {
+        lastError = 'No text in response'
+        continue
+      }
 
       const note = JSON.parse(text) as WrittenNote
       const inputTokens = data.usageMetadata?.promptTokenCount ?? 0
@@ -223,12 +226,13 @@ async function callGemini(facts: NoteFacts): Promise<{ note: WrittenNote; inputT
       const outputTokens = (data.usageMetadata?.candidatesTokenCount ?? 0) + (data.usageMetadata?.thoughtsTokenCount ?? 0)
       return { note, inputTokens, outputTokens }
     } catch (e) {
+      // A network error or a broken reply is tried again
       lastError = String(e)
-      // A rejected request stops the run; a network error or a broken reply is tried again
-      if (fatal) throw e
     }
   }
 
+  // A rejected request stops the run
+  if (fatal) throw fatal
   throw new Error(`API failed after retries: ${lastError}`)
 }
 

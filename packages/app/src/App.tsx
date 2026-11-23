@@ -50,6 +50,7 @@ function App() {
   } | null>(null)
   const [notesData, setNotesData] = useState<{ model: string; games: Record<string, Record<string, WrittenNote>> } | null>(null)
   const [manifestNotes, setManifestNotes] = useState<{ model: string; count: number } | undefined>(undefined)
+  const seriesSelectorRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Full mode: model loaded from model.json
@@ -212,6 +213,7 @@ function App() {
       setSeriesError(null)
       setPanelOpen(false)
       setHash(seriesId, 1)
+      seriesSelectorRef.current?.focus()
     },
     [],
   )
@@ -254,13 +256,17 @@ function App() {
         <h1>Fearless Board</h1>
         <div style={{ position: 'relative' }} ref={panelRef}>
           <button
+            ref={seriesSelectorRef}
+            type="button"
             className="series-selector-btn"
+            aria-expanded={panelOpen}
+            aria-controls={panelOpen ? 'series-selector-panel' : undefined}
             onClick={() => setPanelOpen(!panelOpen)}
           >
             {seriesLabel}
           </button>
           {panelOpen && (
-            <div className="series-selector-panel">
+            <div id="series-selector-panel" className="series-selector-panel">
               {/* 4: Demo line */}
               {load.mode === 'demo' && (
                 <p className="demo-line">

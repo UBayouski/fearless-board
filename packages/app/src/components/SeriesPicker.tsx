@@ -44,8 +44,7 @@ export function SeriesPicker({
         if (!teamNames.includes(query) && !e.event.toLowerCase().includes(query)) return false
       }
       if (teamFilter && !e.teamIds.includes(teamFilter)) return false
-      if (eventFilter && e.event !== eventFilter) return false
-      return true
+      return !eventFilter || e.event === eventFilter
     })
   }, [index, filter, teamFilter, eventFilter, teamMap])
 
@@ -76,15 +75,18 @@ export function SeriesPicker({
           const t1 = teamMap.get(e.teamIds[1])
           const label = `${t0?.name ?? e.teamIds[0]} vs ${t1?.name ?? e.teamIds[1]}`
           return (
-            <li
-              key={e.seriesId}
-              className={selectedId === e.seriesId ? 'selected' : ''}
-              onClick={() => onSelect(e.seriesId)}
-            >
-              <span className="series-teams">{label}</span>
-              <span className="series-meta">
-                {e.event} · {e.stage} · {e.gameCount} game{e.gameCount > 1 ? 's' : ''} · {new Date(e.scheduledStart).toLocaleDateString()}
-              </span>
+            <li key={e.seriesId}>
+              <button
+                type="button"
+                className="series-option"
+                aria-current={selectedId === e.seriesId ? 'true' : undefined}
+                onClick={() => onSelect(e.seriesId)}
+              >
+                <span className="series-teams">{label}</span>
+                <span className="series-meta">
+                  {e.event} · {e.stage} · {e.gameCount} game{e.gameCount > 1 ? 's' : ''} · {new Date(e.scheduledStart).toLocaleDateString()}
+                </span>
+              </button>
             </li>
           )
         })}

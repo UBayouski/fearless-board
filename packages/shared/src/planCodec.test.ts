@@ -85,7 +85,7 @@ function buildFixture(): GamePlan {
     picks: [],
   }
 
-  const plan: GamePlan = {
+  return {
     lineup,
     lineupChanged: new Map<string, boolean>([['T1', false], ['T2', true]]),
     burned: new Set(['C4']),
@@ -96,8 +96,6 @@ function buildFixture(): GamePlan {
     leverage: new Map<string, GamePlanTeamLeverage>([['T1', teamLeverage], ['T2', teamLeverage]]),
     game,
   }
-
-  return plan
 }
 
 describe('encodePlan / decodePlan', () => {

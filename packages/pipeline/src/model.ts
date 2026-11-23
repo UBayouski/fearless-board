@@ -27,6 +27,15 @@ export interface ModelGroup {
   gamesPlayed: { top1: number; top3: number; top5: number; top10: number }
 }
 
+/** Prints the hit rates of the model and of the ranking by games played, one block per group. */
+export function printModelGroups(groups: ModelGroup[]): void {
+  for (const g of groups) {
+    console.log(`  ${g.name} (${g.picks} picks):`)
+    console.log(`    Model       — Top 1: ${g.model.top1}%, Top 3: ${g.model.top3}%, Top 5: ${g.model.top5}%, Top 10: ${g.model.top10}%`)
+    console.log(`    Games played — Top 1: ${g.gamesPlayed.top1}%, Top 3: ${g.gamesPlayed.top3}%, Top 5: ${g.gamesPlayed.top5}%, Top 10: ${g.gamesPlayed.top10}%`)
+  }
+}
+
 export function trainAndEvaluate(
   drafts: SeriesDraft[],
   allPicks: PickRow[],
@@ -230,11 +239,7 @@ export function trainAndEvaluate(
   const modelGroups = evaluateModelOnExamples(evalModel, evalExamples)
 
   console.log('\n  Model evaluation (2026+ games):')
-  for (const g of modelGroups) {
-    console.log(`  ${g.name} (${g.picks} picks):`)
-    console.log(`    Model       — Top 1: ${g.model.top1}%, Top 3: ${g.model.top3}%, Top 5: ${g.model.top5}%, Top 10: ${g.model.top10}%`)
-    console.log(`    Games played — Top 1: ${g.gamesPlayed.top1}%, Top 3: ${g.gamesPlayed.top3}%, Top 5: ${g.gamesPlayed.top5}%, Top 10: ${g.gamesPlayed.top10}%`)
-  }
+  printModelGroups(modelGroups)
 
   // Train final model on all data
   console.log('\n  Training final model on all data...')

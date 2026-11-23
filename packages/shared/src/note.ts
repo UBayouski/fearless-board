@@ -277,7 +277,7 @@ export function checkNote(
   for (const champName of championNames) {
     // Whole names only: "Vi" must not match inside "Viktor"
     const escaped = champName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    if (new RegExp(`(?<![\\w'])${escaped}(?![\\w])`, 'u').test(allText)) {
+    if (new RegExp(`(?<![\\w'])${escaped}(?!\\w)`, 'u').test(allText)) {
       // Check if this champion is in the facts
       const inFacts = championInFacts(facts, champName)
       if (!inFacts) {

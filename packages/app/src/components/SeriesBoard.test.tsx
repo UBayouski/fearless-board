@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToReadableStream } from 'react-dom/server'
 import { SeriesBoard } from './SeriesBoard'
-import { trainPickModel, gamePlan as computeGamePlan, draftReducer, encodePlan, decodePlan, type DraftSession } from '@fearless-board/shared'
+import { trainPickModel, gamePlan as computeGamePlan, draftReducer, encodePlan, decodePlan, type DraftEvent, type DraftSession } from '@fearless-board/shared'
 import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role, GamePlan } from '@fearless-board/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -185,6 +185,23 @@ function visibleText(html: string): string {
   return html.replace(/(--comfort|width):[0-9.]+%/gu, '$1')
 }
 
+/** The draft context of the fixture series in game 3: both lineups, with c5 burned in game 1. */
+const draftContext = {
+  teamIds: ['tA', 'tB'],
+  burned: new Set(['c5']),
+  teamPlayers: new Map([
+    ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
+    ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
+  ]),
+}
+
+/** A draft session of the fixture with team A first, after the given bans and picks. */
+function sessionAfter(...events: DraftEvent[]): DraftSession {
+  let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
+  for (const event of events) session = draftReducer(session, event, draftContext)
+  return session
+}
+
 describe('SeriesBoard render', () => {
   it('renders both team names, ten player names, and the panel title', async () => {
     const el = React.createElement(SeriesBoard, {
@@ -223,26 +240,17 @@ describe('SeriesBoard render', () => {
 
   it('renders a draft session with 6 bans and 2 picks', async () => {
     // Build a valid session by running draftReducer over 6 distinct bans and 2 picks
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']), // c5 burned from game 1
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
 
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    // 6 bans: alternating teams, all distinct champions
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c3' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c4' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c6' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
-    // 2 picks: one per team
-    session = draftReducer(session, { type: 'pick', playerId: 'p1', championId: 'c8' }, ctx)
-    session = draftReducer(session, { type: 'pick', playerId: 'p6', championId: 'c9' }, ctx)
+    const session = sessionAfter(
+      { type: 'ban', championId: 'c1' },
+      { type: 'ban', championId: 'c2' },
+      { type: 'ban', championId: 'c3' },
+      { type: 'ban', championId: 'c4' },
+      { type: 'ban', championId: 'c6' },
+      { type: 'ban', championId: 'c7' },
+      { type: 'pick', playerId: 'p1', championId: 'c8' },
+      { type: 'pick', playerId: 'p6', championId: 'c9' },
+    )
 
     const el = React.createElement(SeriesBoard, {
       draft,
@@ -288,16 +296,7 @@ describe('SeriesBoard render', () => {
 
   it('item 1: ban rows render as buttons in draft mode', async () => {
     // Session with 1 ban — next turn is a ban turn
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -314,21 +313,14 @@ describe('SeriesBoard render', () => {
 
   it('item 2: other champion search appears on pick turn', async () => {
     // Session with 6 bans — next turn is a pick turn
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c3' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c4' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c6' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
+    const session = sessionAfter(
+      { type: 'ban', championId: 'c1' },
+      { type: 'ban', championId: 'c2' },
+      { type: 'ban', championId: 'c3' },
+      { type: 'ban', championId: 'c4' },
+      { type: 'ban', championId: 'c6' },
+      { type: 'ban', championId: 'c7' },
+    )
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -343,16 +335,7 @@ describe('SeriesBoard render', () => {
 
   it('item 3: last removed champion shown in draft bar', async () => {
     // Session with 1 ban — lastRemoved is c2 (c1 is already burned in game 3)
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c2' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -370,22 +353,15 @@ describe('SeriesBoard render', () => {
   })
 
   it('item 4: picked cell shows champion name', async () => {
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c2' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c3' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c4' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c6' }, ctx)
-    session = draftReducer(session, { type: 'ban', championId: 'c7' }, ctx)
-    session = draftReducer(session, { type: 'pick', playerId: 'p1', championId: 'c8' }, ctx)
+    const session = sessionAfter(
+      { type: 'ban', championId: 'c1' },
+      { type: 'ban', championId: 'c2' },
+      { type: 'ban', championId: 'c3' },
+      { type: 'ban', championId: 'c4' },
+      { type: 'ban', championId: 'c6' },
+      { type: 'ban', championId: 'c7' },
+      { type: 'pick', playerId: 'p1', championId: 'c8' },
+    )
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -401,16 +377,7 @@ describe('SeriesBoard render', () => {
 
   it('item 5: draft mode shows Exit Draft and draft bar', async () => {
     // Session with 1 ban so draftMode is true
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -427,16 +394,7 @@ describe('SeriesBoard render', () => {
 
   it('item 6: two slot rows render with team names', async () => {
     // Session with 1 ban so draftMode is true and DraftBar renders
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -508,16 +466,7 @@ describe('SeriesBoard render', () => {
 
   it('outlook: draft mode collapses briefing row', async () => {
     // Session with 1 ban — briefing row should be collapsed
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -586,16 +535,7 @@ describe('SeriesBoard render', () => {
   })
 
   it('item 11: draft mode with one action — briefing collapsed, ban panel before matrix', async () => {
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor, teamMap, championMap, playerMap,
@@ -649,16 +589,7 @@ describe('SeriesBoard render', () => {
   })
 
   it('item 6b: in demo mode with a draft action entered, ban panel and matrix still update', async () => {
-    const ctx = {
-      teamIds: ['tA', 'tB'],
-      burned: new Set(['c5']),
-      teamPlayers: new Map([
-        ['tA', new Set(['p1', 'p2', 'p3', 'p4', 'p5'])],
-        ['tB', new Set(['p6', 'p7', 'p8', 'p9', 'p10'])],
-      ]),
-    }
-    let session: DraftSession = { firstTeamId: 'tA', actions: [], replay: null }
-    session = draftReducer(session, { type: 'ban', championId: 'c1' }, ctx)
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
 
     const el = React.createElement(SeriesBoard, {
       draft, planFor: decodedPlanFor, teamMap, championMap, playerMap,

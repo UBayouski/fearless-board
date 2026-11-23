@@ -153,7 +153,7 @@ export function encodePlan(plan: GamePlan): EncodedPlan {
     }
   }
 
-  const encoded: EncodedPlan = {
+  return {
     champions,
     lineup: Object.entries(plan.lineup).map(([teamId, players]) => [
       teamId,
@@ -171,8 +171,6 @@ export function encodePlan(plan: GamePlan): EncodedPlan {
     leverage: [...plan.leverage].map(([teamId, lev]) => [teamId, encTeamLeverage(lev)]),
     game: plan.game,
   }
-
-  return encoded
 }
 
 // ── Decode ────────────────────────────────────────────────────────────

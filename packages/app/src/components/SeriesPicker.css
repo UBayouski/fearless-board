@@ -23,7 +23,13 @@
   margin: 0;
 }
 
-.series-list li {
+.series-option {
+  display: block;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
   padding: 0.4rem 0.5rem;
   cursor: pointer;
   border-radius: 4px;
@@ -31,12 +37,17 @@
   color: var(--text);
 }
 
-.series-list li:hover {
+.series-option:hover {
   background: var(--surface-2);
 }
 
-.series-list li.selected {
+.series-option[aria-current="true"] {
   background: var(--color-selected);
+}
+
+.series-option:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: -2px;
 }
 
 .series-teams {

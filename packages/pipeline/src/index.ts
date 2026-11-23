@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, CalibrationBin } from '@fearless-board/shared'
 import { backtest, burnedChampions, calibrateModel, pickFeatures } from '@fearless-board/shared'
-import { trainAndEvaluate } from './model.ts'
+import { printModelGroups, trainAndEvaluate } from './model.ts'
 import { runBacktests } from './backtests.ts'
 import {
   parseCSV,
@@ -453,22 +453,17 @@ function classifyRoles2e(
   const avgSupportX = supportPos.positions.reduce((s, v) => s + v.x, 0) / supportPos.positions.length
   const avgSupportY = supportPos.positions.reduce((s, v) => s + v.y, 0) / supportPos.positions.length
 
-  function distToSupport(playerId: string): number {
+  /** Distance from a player's mean position to a point; Infinity without positions. */
+  function distTo(playerId: string, x: number, y: number): number {
     const pos = positions.get(playerId)
     if (!pos || pos.positions.length === 0) return Infinity
     const avgX = pos.positions.reduce((s, v) => s + v.x, 0) / pos.positions.length
     const avgY = pos.positions.reduce((s, v) => s + v.y, 0) / pos.positions.length
-    return Math.sqrt((avgX - avgSupportX) ** 2 + (avgY - avgSupportY) ** 2)
+    return Math.sqrt((avgX - x) ** 2 + (avgY - y) ** 2)
   }
 
-  function distToCenter(playerId: string): number {
-    const pos = positions.get(playerId)
-    if (!pos || pos.positions.length === 0) return Infinity
-    const avgX = pos.positions.reduce((s, v) => s + v.x, 0) / pos.positions.length
-    const avgY = pos.positions.reduce((s, v) => s + v.y, 0) / pos.positions.length
-    const mapCenter = { x: 8150, y: 8150 }
-    return Math.sqrt((avgX - mapCenter.x) ** 2 + (avgY - mapCenter.y) ** 2)
-  }
+  const distToSupport = (playerId: string) => distTo(playerId, avgSupportX, avgSupportY)
+  const distToCenter = (playerId: string) => distTo(playerId, 8150, 8150)
 
   // Step 4: Bot = closest to support
   const bot = remaining.reduce((best, p) =>
@@ -934,10 +929,6 @@ console.log(`\nModel (2026+ evaluation):`)
 console.log(`  Weights: [${evalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
 console.log(`  Training log-likelihood: ${evalModel.meanLogLikelihood.toFixed(4)}`)
 console.log(`  Test log-likelihood: ${testMeanLL.toFixed(4)}`)
-for (const g of modelGroups) {
-  console.log(`  ${g.name} (${g.picks} picks):`)
-  console.log(`    Model       — Top 1: ${g.model.top1}%, Top 3: ${g.model.top3}%, Top 5: ${g.model.top5}%, Top 10: ${g.model.top10}%`)
-  console.log(`    Games played — Top 1: ${g.gamesPlayed.top1}%, Top 3: ${g.gamesPlayed.top3}%, Top 5: ${g.gamesPlayed.top5}%, Top 10: ${g.gamesPlayed.top10}%`)
-}
+printModelGroups(modelGroups)
 console.log(`  Run time: ${elapsed}s`)
 console.log(`  Written to: ${outputDir}`)

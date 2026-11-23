@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import type { GameDraft, ChampionRef, PlayerRef, Role, TeamRef } from '@fearless-board/shared'
+import { picksByTeamInRoleOrder } from './gamePicks'
 import './GameColumn.css'
-
-const ROLE_ORDER = ['top', 'jungle', 'mid', 'bot', 'support']
 
 function roleLabel(role: Role | null | undefined): string {
   return role ?? '?'
@@ -25,25 +24,7 @@ export function GameColumn({
 }) {
   const hasActions = game.actions.length > 0
 
-  const picksByTeam = useMemo(() => {
-    const map = new Map<string, typeof game.picks>()
-    for (const p of game.picks) {
-      const list = map.get(p.teamId) ?? []
-      list.push(p)
-      map.set(p.teamId, list)
-    }
-    return map
-  }, [game.picks])
-
-  const sortByRole = (picks: typeof game.picks) => {
-    const roleOrderMap = new Map<string, number>()
-    for (let i = 0; i < ROLE_ORDER.length; i++) roleOrderMap.set(ROLE_ORDER[i], i)
-    return [...picks].sort((a, b) => {
-      const ra = roleOrderMap.get(playerMap.get(a.playerId)?.role ?? '') ?? 99
-      const rb = roleOrderMap.get(playerMap.get(b.playerId)?.role ?? '') ?? 99
-      return ra - rb
-    })
-  }
+  const picksByTeam = useMemo(() => picksByTeamInRoleOrder(game.picks, playerMap), [game.picks, playerMap])
 
   return (
     <div className={`game-column ${isSelected ? 'selected' : ''}`} onClick={onSelect}>
@@ -60,7 +41,7 @@ export function GameColumn({
       {['blue', 'red'].map((side) => {
         const teamId = game.sides[side as 'blue' | 'red']
         const team = teamMap.get(teamId)
-        const picks = sortByRole(picksByTeam.get(teamId) ?? [])
+        const picks = picksByTeam.get(teamId) ?? []
         return (
           <div key={side} className={`side ${side}`}>
             <div className="side-label">{side.toUpperCase()} — {team?.name ?? teamId}</div>
