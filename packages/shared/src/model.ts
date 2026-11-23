@@ -650,6 +650,7 @@ export function gamePlan(
       const { credible, burned: burnedEntries } = crediblePool(pool, burned)
 
       let likelihoods: PickLikelihood[] = []
+      let startLikelihoods: PickLikelihood[] = []
       if (role && draft.roleCounts) {
         likelihoods = buildPickLikelihoods(
           model,
@@ -658,6 +659,17 @@ export function gamePlan(
           draft.scheduledStart,
           picks,
           burned,
+          draft.roleCounts,
+          allChampionIds,
+        )
+        // 1.1: startLikelihoods = model list computed with nothing burned
+        startLikelihoods = buildPickLikelihoods(
+          model,
+          lp.playerId,
+          role,
+          draft.scheduledStart,
+          picks,
+          new Set<string>(),
           draft.roleCounts,
           allChampionIds,
         )
@@ -672,6 +684,7 @@ export function gamePlan(
         role: role ?? null,
         pool: { credible, burned: burnedEntries },
         likelihoods,
+        startLikelihoods,
         priorGames,
       }
 

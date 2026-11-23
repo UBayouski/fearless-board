@@ -840,7 +840,7 @@ for (const draft of drafts) {
 }
 
 // Run backtests (extracted to backtests.ts)
-const { leverageResult, liveDraftResult } = runBacktests(drafts, allPicks, playerRole, splitDate, training)
+const { leverageResult, liveDraftResult, lookAheadResult } = runBacktests(drafts, allPicks, playerRole, splitDate, training)
 
 // Calibration (kept in index.ts as it needs eval examples from training)
 console.log('\nRunning calibration...')
@@ -895,6 +895,7 @@ const backtestOutput = {
     secondPhaseBans: liveDraftResult.secondPhaseBans,
     redFirstShare: liveDraftResult.redFirstShare,
   },
+  lookAhead: lookAheadResult,
 }
 writeFileSync(resolve(outputDir, 'backtest.json'), JSON.stringify(backtestOutput))
 

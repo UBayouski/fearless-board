@@ -2,7 +2,7 @@
 // Extracted from index.ts per docs/refactor.md section 5.
 
 import type { SeriesDraft, Role, PickRow } from '@fearless-board/shared'
-import { backtestLeverage, backtestLiveDraft } from '@fearless-board/shared'
+import { backtestLeverage, backtestLiveDraft, backtestLookAhead } from '@fearless-board/shared'
 import type { TrainingResult } from './model.js'
 
 export interface SeriesMeta {
@@ -78,5 +78,36 @@ export function runBacktests(
     }
   }
 
-  return { leverageResult, liveDraftResult }
+  // Look-ahead backtest
+  console.log('\nRunning look-ahead backtest...')
+  const lookAheadResult = backtestLookAhead(
+    testSeries,
+    allPicks,
+    evalModel,
+    playerRole,
+  )
+
+  console.log('  Table 1: By game number')
+  console.log('  ' + ['Game', 'Picks', 'Mean Burned', 'Outside Top 10', 'First-time'].join('  '))
+  for (const row of lookAheadResult.byGame) {
+    console.log(`    ${String(row.gameNumber).padEnd(4)} ${String(row.picks).padEnd(5)} ${row.meanBurnedShare.toFixed(1)}%       ${row.outsideTop10.toFixed(1)}%          ${row.firstTimePick.toFixed(1)}%`)
+  }
+
+  console.log('\n  Table 2: By burned-share band')
+  console.log('  ' + ['Band', 'Picks', 'Mean Burned', 'Outside Top 10', 'First-time'].join('  '))
+  for (const row of lookAheadResult.byBand) {
+    console.log(`    ${row.label.padEnd(5)} ${String(row.picks).padEnd(5)} ${row.meanBurnedShare.toFixed(1)}%       ${row.outsideTop10.toFixed(1)}%          ${row.firstTimePick.toFixed(1)}%`)
+  }
+
+  console.log('\n  Table 3: Projection')
+  console.log(`    Mean predicted: ${lookAheadResult.projection.meanPredicted.toFixed(1)}%`)
+  console.log(`    Mean actual:    ${lookAheadResult.projection.meanActual.toFixed(1)}%`)
+  console.log(`    MAE:            ${lookAheadResult.projection.mae.toFixed(1)}%`)
+  console.log(`    MAE (constant): ${lookAheadResult.projection.maeConstant.toFixed(1)}%`)
+  console.log('    ' + ['Fifth', 'Count', 'Mean Predicted', 'Mean Actual'].join('  '))
+  for (const row of lookAheadResult.projection.byFifth) {
+    console.log(`      ${row.label.padEnd(6)} ${String(row.count).padEnd(5)} ${row.meanPredicted.toFixed(1)}%         ${row.meanActual.toFixed(1)}%`)
+  }
+
+  return { leverageResult, liveDraftResult, lookAheadResult }
 }

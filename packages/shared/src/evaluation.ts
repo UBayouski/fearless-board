@@ -4,9 +4,11 @@ import type {
   SeriesDraft, PickRow, PickModel, Role, PickExample, PickLikelihood,
   BacktestGame, BacktestPlayer, BacktestSummary, CalibrationBin,
   LeverageBacktestGroup, LiveDraftGroup, GameDraft, PlayerRef, PlayerPick,
+  GamePlanPlayer,
 } from './types.ts'
 import { burnedChampions, playerPool, crediblePool } from './rules.ts'
-import { pickFeatures, pickLikelihoods, threat, banLeverage, conditionLikelihoods, draftSlotType } from './model.ts'
+import { pickFeatures, pickLikelihoods, threat, banLeverage, conditionLikelihoods, draftSlotType, gamePlan } from './model.ts'
+import { burnedShare as burnedShareFn, expectedBurn } from './outlook.ts'
 
 /**
  * Convert roleCounts champions map to two separate maps for pickFeatures.
@@ -875,5 +877,245 @@ export function backtest(
   }
 
   return { games, summary }
+}
+
+// ── Look-ahead backtest types ────────────────────────────────────────
+
+/** One row of the look-ahead backtest: by game number. */
+export interface LookAheadGameRow {
+  gameNumber: number
+  picks: number
+  meanBurnedShare: number
+  outsideTop10: number
+  firstTimePick: number
+}
+
+/** One row of the look-ahead backtest: by burned-share band. */
+export interface LookAheadBandRow {
+  label: string
+  picks: number
+  meanBurnedShare: number
+  outsideTop10: number
+  firstTimePick: number
+}
+
+/** One row of the projection backtest: by fifths. */
+export interface LookAheadProjectionRow {
+  label: string
+  count: number
+  meanPredicted: number
+  meanActual: number
+}
+
+/** Full look-ahead backtest result. */
+export interface LookAheadBacktest {
+  /** Table 1: by game number. */
+  byGame: LookAheadGameRow[]
+  /** Table 2: by burned-share band. */
+  byBand: LookAheadBandRow[]
+  /** Table 3: projection. */
+  projection: {
+    meanPredicted: number
+    meanActual: number
+    mae: number
+    maeConstant: number
+    byFifth: LookAheadProjectionRow[]
+  }
+}
+
+/**
+ * Backtest series outlook: burned share, picks outside top 10, and expectedBurn projection.
+ *
+ * Uses the model trained before 2026 and the 2026 series, as in the other backtests.
+ * Players with 20+ earlier games only.
+ */
+export function backtestLookAhead(
+  seriesList: readonly SeriesDraft[],
+  picks: readonly PickRow[],
+  model: PickModel,
+  playerRole: Map<string, Role | null>,
+): LookAheadBacktest {
+
+  // Collect per-pick data: burned share, outside top 10, first-time pick, expected burn
+  interface PickData {
+    gameNumber: number
+    burnedShare: number
+    outsideTop10: boolean
+    firstTimePick: boolean
+    expectedBurn: number
+    actualBurn: number // share of startLikelihoods removed by this game's picks
+  }
+
+  const allPickData: PickData[] = []
+  const projectionData: PickData[] = []
+
+  for (const draft of seriesList) {
+    if (!draft.roleCounts || !draft.championsSeen) continue
+
+    for (const game of draft.games) {
+      const plan = gamePlan(draft, game.gameNumber, picks, model, playerRole)
+
+      // Build a map: playerId -> GamePlanPlayer
+      const playerMap = new Map<string, GamePlanPlayer>()
+      for (const [, roleMap] of plan.players) {
+        for (const [, gp] of roleMap) {
+          playerMap.set(gp.playerId, gp)
+        }
+      }
+      for (const [, unknownList] of plan.unknownRolePlayers) {
+        for (const gp of unknownList) {
+          playerMap.set(gp.playerId, gp)
+        }
+      }
+
+      // Compute expected burn for this game
+      const expBurnMap = expectedBurn(plan)
+
+      // Compute actual burn: for each player, what share of their startLikelihoods
+      // is removed by this game's picks (champions picked by other players)
+      const gameChampions = new Set(game.picks.map(p => p.championId))
+
+      for (const pick of game.picks) {
+        const gp = playerMap.get(pick.playerId)
+        if (!gp) continue
+
+        // Only players with 20+ earlier games
+        if (gp.priorGames < 20) continue
+
+        // Burned share: sum of startLikelihoods probabilities over burned champions
+        const bs = burnedShareFn(gp, plan.burned)
+
+        // Outside top 10 of startLikelihoods
+        const top10Ids = new Set(gp.startLikelihoods.slice(0, 10).map(l => l.championId))
+        const outside = !top10Ids.has(pick.championId)
+
+        // First-time pick: champion not in any earlier games for this player
+        const pool = playerPool(picks, pick.playerId, draft.scheduledStart)
+        const championInPool = pool.some(e => e.championId === pick.championId)
+        const firstTime = !championInPool
+
+        // Expected burn from the plan
+        const eb = expBurnMap.get(pick.playerId) ?? 0
+
+        // Actual burn: share of the current list (the one expectedBurn uses) removed by this game's picks
+        let actualBurnSum = 0
+        for (const l of gp.likelihoods) {
+          if (gameChampions.has(l.championId)) {
+            actualBurnSum += l.probability
+          }
+        }
+        const actualBurn = Math.min(1, actualBurnSum)
+
+        const row = {
+          gameNumber: game.gameNumber,
+          burnedShare: bs,
+          outsideTop10: outside,
+          firstTimePick: firstTime,
+          expectedBurn: eb,
+          actualBurn,
+        }
+        // The projection covers every game; the burned-share tables cover games 2 and later
+        projectionData.push(row)
+        if (game.gameNumber >= 2) allPickData.push(row)
+      }
+    }
+  }
+
+  if (allPickData.length === 0) {
+    throw new Error('Look-ahead backtest has no rows — check that 2026 series have roleCounts and championsSeen')
+  }
+
+  // ── Table 1: By game number ──────────────────────────────────────
+
+  const byGameMap = new Map<number, PickData[]>()
+  for (const pd of allPickData) {
+    const list = byGameMap.get(pd.gameNumber) ?? []
+    list.push(pd)
+    byGameMap.set(pd.gameNumber, list)
+  }
+
+  const byGame: LookAheadGameRow[] = []
+  for (const [gn, data] of [...byGameMap.entries()].sort((a, b) => a[0] - b[0])) {
+    const n = data.length
+    const meanBurned = data.reduce((s, d) => s + d.burnedShare, 0) / n
+    const outsideCount = data.filter(d => d.outsideTop10).length
+    const firstTimeCount = data.filter(d => d.firstTimePick).length
+    byGame.push({
+      gameNumber: gn,
+      picks: n,
+      meanBurnedShare: Math.round(meanBurned * 1000) / 10,
+      outsideTop10: Math.round(outsideCount / n * 1000) / 10,
+      firstTimePick: Math.round(firstTimeCount / n * 1000) / 10,
+    })
+  }
+
+  // ── Table 2: By burned-share band ────────────────────────────────
+
+  const bands = [
+    { label: '<10%', low: 0, high: 0.1 },
+    { label: '10-20%', low: 0.1, high: 0.2 },
+    { label: '20-30%', low: 0.2, high: 0.3 },
+    { label: '30-45%', low: 0.3, high: 0.45 },
+    { label: '45%+', low: 0.45, high: Infinity },
+  ]
+
+  const byBand: LookAheadBandRow[] = []
+  for (const band of bands) {
+    const data = allPickData.filter(d => d.burnedShare >= band.low && d.burnedShare < band.high)
+    if (data.length === 0) continue
+    const n = data.length
+    const meanBurned = data.reduce((s, d) => s + d.burnedShare, 0) / n
+    const outsideCount = data.filter(d => d.outsideTop10).length
+    const firstTimeCount = data.filter(d => d.firstTimePick).length
+    byBand.push({
+      label: band.label,
+      picks: n,
+      meanBurnedShare: Math.round(meanBurned * 1000) / 10,
+      outsideTop10: Math.round(outsideCount / n * 1000) / 10,
+      firstTimePick: Math.round(firstTimeCount / n * 1000) / 10,
+    })
+  }
+
+  // ── Table 3: Projection ──────────────────────────────────────────
+
+  const meanPredicted = projectionData.reduce((s, d) => s + d.expectedBurn, 0) / projectionData.length
+  const meanActual = projectionData.reduce((s, d) => s + d.actualBurn, 0) / projectionData.length
+
+  // MAE of expectedBurn vs actual
+  const mae = projectionData.reduce((s, d) => s + Math.abs(d.expectedBurn - d.actualBurn), 0) / projectionData.length
+
+  // MAE of a constant (mean predicted) vs actual
+  const maeConstant = projectionData.reduce((s, d) => s + Math.abs(meanActual - d.actualBurn), 0) / projectionData.length
+
+  // By fifths: sort by expectedBurn, split into 5 equal groups
+  const sorted = [...projectionData].sort((a, b) => a.expectedBurn - b.expectedBurn)
+  const fifthSize = Math.floor(sorted.length / 5)
+  const byFifth: LookAheadProjectionRow[] = []
+  for (let i = 0; i < 5; i++) {
+    const start = i * fifthSize
+    const end = i === 4 ? sorted.length : (i + 1) * fifthSize
+    const group = sorted.slice(start, end)
+    if (group.length === 0) continue
+    const mp = group.reduce((s, d) => s + d.expectedBurn, 0) / group.length
+    const ma = group.reduce((s, d) => s + d.actualBurn, 0) / group.length
+    byFifth.push({
+      label: `fifth ${i + 1}`,
+      count: group.length,
+      meanPredicted: Math.round(mp * 1000) / 10,
+      meanActual: Math.round(ma * 1000) / 10,
+    })
+  }
+
+  return {
+    byGame,
+    byBand,
+    projection: {
+      meanPredicted: Math.round(meanPredicted * 1000) / 10,
+      meanActual: Math.round(meanActual * 1000) / 10,
+      mae: Math.round(mae * 1000) / 10,
+      maeConstant: Math.round(maeConstant * 1000) / 10,
+      byFifth,
+    },
+  }
 }
 

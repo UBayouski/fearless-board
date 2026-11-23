@@ -343,6 +343,8 @@ export interface GamePlanPlayer {
   role: Role | null
   pool: { credible: PoolEntry[]; burned: PoolEntry[] }
   likelihoods: PickLikelihood[]
+  /** Model list computed with nothing burned (all champions seen so far). Used for series outlook. */
+  startLikelihoods: PickLikelihood[]
   /** Sum of `games` over the pool: total number of earlier games for this player. */
   priorGames: number
   /** True if this player is a substitute (not in the lineup shown before reveal). */

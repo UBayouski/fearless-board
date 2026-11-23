@@ -71,13 +71,13 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.2rem 0;
+  font: inherit;
   font-size: 0.8rem;
   background: transparent;
   border: none;
   cursor: default;
   text-align: left;
   width: 100%;
-  font: inherit;
   color: inherit;
 }
 
@@ -133,7 +133,7 @@
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--ember);
-  tabular-nums: all;
+  font-variant-numeric: tabular-nums;
   min-width: 2rem;
   display: inline-block;
 }
