@@ -96,6 +96,18 @@ The board uses a conditional logit model to score every available champion for e
 
 Leverage finds 26.6% of real bans in its top 8 against 21.1% for the plain 45-day meta list — a modest gain. About three of four real bans fall outside the list entirely, so the panel is a list of bans to consider, not a prediction.
 
+**Live draft** lets you enter bans and picks as they happen during a real draft. After each action, banned and picked champions are removed from every player's list and the remaining probabilities are rescaled. The ban leverage panel is recomputed with the updated lists. A replay mode steps through the real draft actions one at a time, showing the rank of each actual pick in the conditioned list. The draft order follows the pattern discovered from the data: 6 bans, 6 picks, 4 bans, 4 picks — expressed as "first team" and "second team" rather than blue and red, since in 2026 about half of games have the red side act first.
+
+**Live draft backtest** on 2026+ games (model trained on pre-2026):
+
+| Group | Picks | Conditioned Top 5 | Unconditioned Top 5 |
+|---|---|---|---|
+| All picks | 4,500 | 74.4% | 62.9% |
+| Pick 1 | 900 | 82.8% | 78.3% |
+| Pick 5 | 900 | 59.2% | 43.9% |
+
+Conditioning improves hit rates across all positions. Later picks gain more from conditioning — pick 5 improves by +15.3 percentage points at Top 5 — confirming that earlier bans and picks narrow the pool meaningfully.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE). The licence covers this code only, not the match data.

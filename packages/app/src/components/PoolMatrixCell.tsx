@@ -9,6 +9,7 @@ function roleLabel(role: Role | null): string {
 
 export function PoolMatrixCell({
   playerName,
+  playerId,
   role,
   pool,
   burnedByGame,
@@ -18,8 +19,13 @@ export function PoolMatrixCell({
   likelihoods,
   priorGames,
   substitute,
+  isPickingPlayer,
+  onPick,
+  unavailable,
+  hasPicked,
 }: {
   playerName: string
+  playerId: string
   role: Role | null
   pool: { credible: PoolEntry[]; burned: PoolEntry[] }
   burnedByGame: Map<string, number>
@@ -29,6 +35,10 @@ export function PoolMatrixCell({
   likelihoods: PickLikelihood[]
   priorGames: number
   substitute?: boolean
+  isPickingPlayer?: boolean
+  onPick?: (playerId: string, championId: string) => void
+  unavailable?: Set<string>
+  hasPicked?: boolean
 }) {
   const totalGames = pool.credible.length + pool.burned.length
   const burnedCount = pool.burned.length
@@ -112,7 +122,11 @@ export function PoolMatrixCell({
         </span>
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
-      {isPlaceholder || isLowHistory ? (
+      {hasPicked ? (
+        <div className="pool-picked-note">
+          <span className="pool-picked-label">picked</span>
+        </div>
+      ) : isPlaceholder || isLowHistory ? (
         <div className="pool-placeholder-note">
           <div className="pool-placeholder-text">
             {isPlaceholder ? 'no earlier games in the data' : `${priorGames} earlier ${priorGames === 1 ? 'game' : 'games'} in the data`}
@@ -171,14 +185,17 @@ export function PoolMatrixCell({
             const ago = poolEntry ? weeksAgo(poolEntry.lastPlayed) : ''
             const explanation = featureExplanation(l)
             const rank = revealedPick && l.championId === revealedPick.championId ? revealedPick.rank : 0
+            const isUnavailable = unavailable?.has(l.championId)
+            const isClickable = isPickingPlayer && !isUnavailable && onPick !== undefined
 
             return (
               <button
                 key={l.championId}
                 type="button"
-                className={`champ-tile-btn ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''} ${!played ? 'pool-not-played' : ''}`}
+                className={`champ-tile-btn ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''} ${!played ? 'pool-not-played' : ''} ${isUnavailable ? 'draft-unavailable' : ''} ${isClickable ? 'draft-clickable' : ''}`}
                 style={{ '--comfort': `${comfortShare}%` } as CSSProperties}
                 aria-label={`${champ?.name ?? l.championId}, ${probPct}% likelihood, ${explanation}`}
+                onClick={isClickable ? () => onPick!(playerId, l.championId) : undefined}
               >
                 <span className="champ-tile-inner">
                   {champ?.name ?? l.championId}

@@ -144,6 +144,33 @@
   outline-offset: 2px;
 }
 
+.draft-btn-inline {
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+}
+
+.draft-btn-inline:hover {
+  background: var(--line);
+}
+
+.draft-btn-inline.replay {
+  background: var(--blue-side);
+  color: var(--bg);
+  border-color: var(--blue-side);
+}
+
+.draft-btn-inline.replay:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ── Score pips ─────────────────────────────────────────────── */
 .score-pips {
   display: flex;

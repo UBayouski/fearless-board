@@ -3,7 +3,7 @@ import React from 'react'
 import { renderToReadableStream } from 'react-dom/server'
 import { SeriesBoard } from './SeriesBoard'
 import { trainPickModel } from '@fearless-board/shared'
-import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role } from '@fearless-board/shared'
+import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role, DraftSession } from '@fearless-board/shared'
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -187,5 +187,91 @@ describe('SeriesBoard render', () => {
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('undefined')
     expect(html).not.toMatch(/-\d+%/u)
+  })
+
+  it('renders a draft session with 6 bans and 2 picks', async () => {
+    // Build a session with 6 bans and 2 picks (using player IDs)
+    const session: DraftSession = {
+      firstTeamId: 'tA',
+      actions: [
+        { type: 'ban', teamId: 'tA', championId: 'c1' },
+        { type: 'ban', teamId: 'tB', championId: 'c2' },
+        { type: 'ban', teamId: 'tA', championId: 'c3' },
+        { type: 'ban', teamId: 'tB', championId: 'c4' },
+        { type: 'ban', teamId: 'tA', championId: 'c5' },
+        { type: 'ban', teamId: 'tB', championId: 'c1' }, // c1 already banned — rejected
+        { type: 'pick', teamId: 'tA', championId: 'c2', playerId: 'p1' },
+        { type: 'pick', teamId: 'tB', championId: 'c3', playerId: 'p6' },
+      ],
+      replay: null,
+    }
+
+    const el = React.createElement(SeriesBoard, {
+      draft,
+      picks,
+      teamMap,
+      championMap,
+      playerMap,
+      selectedGame: 3,
+      onSelectGame: () => {},
+      model,
+      initialSession: session,
+    })
+
+    const html = await renderToString(el)
+
+    // Both team names in the draft bar
+    expect(html).toContain('Team Alpha')
+    expect(html).toContain('Team Beta')
+
+    // Champion names in the slots
+    expect(html).toContain('Champion One')
+    expect(html).toContain('Champion Two')
+    expect(html).toContain('Champion Three')
+    expect(html).toContain('Champion Four')
+    expect(html).toContain('Champion Five')
+
+    // The two picking players' cells show "picked" (because playerId matches)
+    expect(html).toContain('picked')
+
+    // No NaN or undefined
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('fails when pick is recorded under player name instead of id', async () => {
+    // Simulate the bug: picks use playerName instead of playerId
+    const buggySession: DraftSession = {
+      firstTeamId: 'tA',
+      actions: [
+        { type: 'ban', teamId: 'tA', championId: 'c1' },
+        { type: 'ban', teamId: 'tB', championId: 'c2' },
+        { type: 'ban', teamId: 'tA', championId: 'c3' },
+        { type: 'ban', teamId: 'tB', championId: 'c4' },
+        { type: 'ban', teamId: 'tA', championId: 'c5' },
+        { type: 'ban', teamId: 'tB', championId: 'c1' },
+        // BUG: playerName instead of playerId
+        { type: 'pick', teamId: 'tA', championId: 'c2', playerId: 'Player One' },
+        { type: 'pick', teamId: 'tB', championId: 'c3', playerId: 'Player Six' },
+      ],
+      replay: null,
+    }
+
+    const el = React.createElement(SeriesBoard, {
+      draft,
+      picks,
+      teamMap,
+      championMap,
+      playerMap,
+      selectedGame: 3,
+      onSelectGame: () => {},
+      model,
+      initialSession: buggySession,
+    })
+
+    const html = await renderToString(el)
+
+    // "picked" should NOT appear because playerId 'Player One' doesn't match any real player ID
+    expect(html).not.toContain('picked')
   })
 })

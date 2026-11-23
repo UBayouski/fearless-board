@@ -12,6 +12,10 @@ export function PoolMatrix({
   championMap,
   gameNumber,
   revealedGame,
+  draftMode,
+  draftConditioned,
+  currentDraftSlot,
+  onPick,
 }: {
   plan: GamePlan
   draft: SeriesDraft
@@ -19,6 +23,10 @@ export function PoolMatrix({
   championMap: Map<string, ChampionRef>
   gameNumber: number
   revealedGame?: GameDraft
+  draftMode?: boolean
+  draftConditioned?: { unavailable: Set<string>; pickedPlayers: Set<string> } | null
+  currentDraftSlot?: { slot: string; side: '1' | '2'; type: 'b' | 'p'; teamId: string } | null
+  onPick?: (playerId: string, championId: string) => void
 }) {
   const { burnedByGame, players } = plan
 
@@ -85,10 +93,16 @@ export function PoolMatrix({
               if (!gp) {
                 return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
               }
+              // In draft mode, plan already has conditioned likelihoods (from liveGamePlan)
+              const isPickingPlayer = draftMode && currentDraftSlot?.type === 'p'
+                && currentDraftSlot?.teamId === teamId
+                && !draftConditioned?.pickedPlayers.has(gp.playerId)
+              const playerHasPicked = draftConditioned?.pickedPlayers.has(gp.playerId) ?? false
               return (
                 <div key={teamId} className="pool-matrix-cell">
                   <PoolMatrixCell
                     playerName={gp.playerName}
+                    playerId={gp.playerId}
                     role={gp.role}
                     pool={gp.pool}
                     burnedByGame={burnedByGame}
@@ -98,6 +112,10 @@ export function PoolMatrix({
                     likelihoods={gp.likelihoods}
                     priorGames={gp.priorGames}
                     substitute={gp.substitute}
+                    isPickingPlayer={isPickingPlayer}
+                    onPick={isPickingPlayer ? onPick : undefined}
+                    unavailable={draftMode ? draftConditioned?.unavailable : undefined}
+                    hasPicked={playerHasPicked}
                   />
                 </div>
               )
@@ -123,6 +141,7 @@ export function PoolMatrix({
                       <PoolMatrixCell
                         key={gp.playerId}
                         playerName={gp.playerName}
+                        playerId={gp.playerId}
                         role={null}
                         pool={gp.pool}
                         burnedByGame={burnedByGame}

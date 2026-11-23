@@ -289,6 +289,34 @@
   outline-offset: 1px;
 }
 
+/* ── Draft mode styles ─────────────────────────────────────── */
+
+.pool-picked-note {
+  padding: 0.5rem 0;
+}
+
+.pool-picked-label {
+  font-size: 0.85rem;
+  color: var(--hit);
+  font-weight: 600;
+  font-style: italic;
+}
+
+.champ-tile-btn.draft-unavailable {
+  opacity: 0.3;
+  text-decoration: line-through;
+}
+
+.champ-tile-btn.draft-clickable {
+  cursor: pointer;
+  outline: 1px solid var(--blue-side);
+}
+
+.champ-tile-btn.draft-clickable:hover {
+  background: var(--surface-2) !important;
+  outline: 2px solid var(--blue-side);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .champ-tile-btn,
   .champ-tile,
