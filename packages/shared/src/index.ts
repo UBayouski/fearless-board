@@ -813,6 +813,483 @@ export function calibrateModel(
   return result
 }
 
+// ── Ban leverage and denial picks ──────────────────────────────────────
+
+/** One player's contribution to a champion's threat. */
+export interface ThreatHit {
+  playerId: string
+  playerName: string
+  probability: number
+}
+
+/** A champion's threat from one team. */
+export interface ChampionThreat {
+  championId: string
+  /** 1 - product of (1 - P(player picks c)) over the five players. */
+  threat: number
+  /** Players who individually have ≥ 5% likelihood for this champion. */
+  hits: ThreatHit[]
+}
+
+/**
+ * Threat of champion `c` from a team: the probability that at least one of its
+ * five players picks it.  `1 - product(1 - P(player picks c))`.
+ *
+ * `playerLikelihoods` is an array of 5 likelihood arrays, one per player, paired
+ * with `players` in order.
+ *
+ * Returns the threat value and the list of players who individually want it
+ * (likelihood ≥ 5%).
+ */
+export function threat(
+  playerLikelihoods: PickLikelihood[][],
+  championId: string,
+  players: readonly PlayerRef[],
+): { threat: number; hits: ThreatHit[] } {
+  let product = 1
+  const hits: ThreatHit[] = []
+
+  for (let i = 0; i < players.length; i++) {
+    const player = players[i]
+    const playerLiks = playerLikelihoods[i] ?? []
+    const entry = playerLiks.find((l) => l.championId === championId)
+    const p = entry ? entry.probability : 0
+    product *= 1 - p
+    if (p >= 0.05) {
+      hits.push({ playerId: player.id, playerName: player.name, probability: p })
+    }
+  }
+
+  return {
+    threat: 1 - product,
+    hits,
+  }
+}
+
+/** A ban leverage entry: champion ranked by (threat from B - threat from A). */
+export interface BanLeverageEntry {
+  championId: string
+  /** Threat from the opposing team. */
+  threatFromOpponent: number
+  /** Threat from the own team (cost of banning). */
+  threatFromOwn: number
+  /** Difference: threatFromOpponent - threatFromOwn. */
+  leverage: number
+  /** Opponent players who want this champion (≥ 5%). */
+  opponentHits: ThreatHit[]
+  /** Own-team players who want this champion (≥ 5%). */
+  ownHits: ThreatHit[]
+}
+
+/**
+ * Ban leverage for team A against team B.
+ *
+ * For every available champion, compute `threat from B` and `threat from A`.
+ * Sort by `threat from B - threat from A` descending. Return the top 8.
+ *
+ * `opponentPlayerLikelihoods` is an array of 5 likelihood arrays (one per opponent player).
+ * `ownPlayerLikelihoods` is an array of 5 likelihood arrays (one per own player).
+ * `availableChampions` is the set of champions not burned and not banned.
+ */
+export function banLeverage(
+  opponentPlayerLikelihoods: PickLikelihood[][],
+  ownPlayerLikelihoods: PickLikelihood[][],
+  opponentPlayers: readonly PlayerRef[],
+  ownPlayers: readonly PlayerRef[],
+  availableChampions: Set<string>,
+  topN: number = 8,
+): BanLeverageEntry[] {
+  // Consider ALL available champions, not just those in likelihood arrays.
+  // Champions not in any player's likelihoods have zero probability.
+  const entries: BanLeverageEntry[] = []
+  for (const champId of availableChampions) {
+    const oppThreat = threat(opponentPlayerLikelihoods, champId, opponentPlayers)
+    const ownThreat = threat(ownPlayerLikelihoods, champId, ownPlayers)
+    const leverage = oppThreat.threat - ownThreat.threat
+
+    entries.push({
+      championId: champId,
+      threatFromOpponent: oppThreat.threat,
+      threatFromOwn: ownThreat.threat,
+      leverage,
+      opponentHits: oppThreat.hits,
+      ownHits: ownThreat.hits,
+    })
+  }
+
+  entries.sort((a, b) => b.leverage - a.leverage)
+  return entries.slice(0, topN)
+}
+
+/** A denial pick entry. */
+export interface DenialPickEntry {
+  championId: string
+  /** The own-team player who can take it. */
+  ownPlayerId: string
+  ownPlayerName: string
+  /** This player's likelihood for the champion. */
+  ownProbability: number
+  /** How many times this player has played the champion. */
+  gamesPlayed: number
+  /** Threat from the opposing team. */
+  threatFromOpponent: number
+  /** Opponent players who want this champion (≥ 5%). */
+  opponentHits: ThreatHit[]
+}
+
+/**
+ * Denial picks for team A: champions where an A player has played the champion
+ * before and has it among their ten most likely, sorted by threat from B.
+ *
+ * `ownPlayerLikelihoods` is an array of 5 likelihood arrays (one per own player).
+ * `opponentPlayerLikelihoods` is an array of 5 likelihood arrays (one per opponent player).
+ * `ownPlayerPools` maps playerId → championId → gamesPlayed count.
+ *
+ * Returns the top 5.
+ */
+export function denialPicks(
+  ownPlayerLikelihoods: PickLikelihood[][],
+  opponentPlayerLikelihoods: PickLikelihood[][],
+  ownPlayers: readonly PlayerRef[],
+  opponentPlayers: readonly PlayerRef[],
+  availableChampions: Set<string>,
+  /** Map from playerId to championId → gamesPlayed count. */
+  ownPlayerPools: Map<string, Map<string, number>>,
+  topN: number = 5,
+): DenialPickEntry[] {
+  const entries: DenialPickEntry[] = []
+
+  for (let i = 0; i < ownPlayers.length; i++) {
+    const player = ownPlayers[i]
+    const playerTop10 = (ownPlayerLikelihoods[i] ?? []).slice(0, 10)
+
+    for (const l of playerTop10) {
+      if (!availableChampions.has(l.championId)) continue
+
+      // Check if this player has played the champion
+      const pool = ownPlayerPools.get(player.id)
+      const gamesPlayed = pool?.get(l.championId) ?? 0
+      if (gamesPlayed === 0) continue
+
+      const oppThreat = threat(opponentPlayerLikelihoods, l.championId, opponentPlayers)
+
+      entries.push({
+        championId: l.championId,
+        ownPlayerId: player.id,
+        ownPlayerName: player.name,
+        ownProbability: l.probability,
+        gamesPlayed,
+        threatFromOpponent: oppThreat.threat,
+        opponentHits: oppThreat.hits,
+      })
+    }
+  }
+
+  // Deduplicate by championId, keeping the entry with the highest ownProbability
+  const byChamp = new Map<string, DenialPickEntry>()
+  for (const e of entries) {
+    const existing = byChamp.get(e.championId)
+    if (!existing || e.ownProbability > existing.ownProbability) {
+      byChamp.set(e.championId, e)
+    }
+  }
+
+  const unique = Array.from(byChamp.values())
+  unique.sort((a, b) => b.threatFromOpponent - a.threatFromOpponent)
+  return unique.slice(0, topN)
+}
+
+/** Ban leverage backtest result for one group. */
+export interface LeverageBacktestGroup {
+  name: string
+  bans: number
+  /** Share of actual bans in top 5 by ban leverage. */
+  leverageTop5: number
+  /** Share of actual bans in top 8 by ban leverage. */
+  leverageTop8: number
+  /** Share of actual bans in top 5 by opponent threat alone. */
+  threatTop5: number
+  /** Share of actual bans in top 8 by opponent threat alone. */
+  threatTop8: number
+  /** Share of actual bans in top 5 by 45-day meta (most picked across all roles). */
+  metaTop5: number
+  /** Share of actual bans in top 8 by 45-day meta. */
+  metaTop8: number
+}
+
+/**
+ * Backtest ban leverage on a set of games.
+ *
+ * For every ban in a game where all ten players have a role, measures:
+ * - Share of actual bans in the banning team's top 5 and top 8 by ban leverage.
+ * - Same for opponent threat alone.
+ * - Same for 45-day meta (most picked champions across all roles).
+ *
+ * Throws if a player with a role gets an empty likelihood list (indicates missing
+ * roleCounts or championsSeen on the series draft).
+ *
+ * Returns results for all games and games 2+.
+ */
+export function backtestLeverage(
+  seriesList: readonly SeriesDraft[],
+  picks: readonly PickRow[],
+  model: PickModel,
+  playerRole: Map<string, Role | null>,
+): { all: LeverageBacktestGroup; games2Plus: LeverageBacktestGroup } {
+
+  interface GameBanCheck {
+    gameNumber: number
+    banningTeamId: string
+    bannedChampionId: string
+    draft: SeriesDraft
+    game: GameDraft
+  }
+
+  // Collect all bans across all games, grouped by (draft, game) for likelihood caching
+  const allBanChecks: GameBanCheck[] = []
+
+  for (const draft of seriesList) {
+    // Verify draft has roleCounts and championsSeen
+    if (!draft.roleCounts || !draft.championsSeen) {
+      throw new Error(`Series ${draft.seriesId} missing roleCounts or championsSeen — pipeline did not attach them`)
+    }
+
+    for (const game of draft.games) {
+      const bans = game.actions.filter(a => a.type === 'ban')
+      if (bans.length === 0) continue
+
+      // Check that all 10 players have a role
+      const allHaveRole = game.picks.every(pick => playerRole.get(pick.playerId) !== null)
+      if (!allHaveRole) continue
+
+      for (const ban of bans) {
+        allBanChecks.push({
+          gameNumber: game.gameNumber,
+          banningTeamId: ban.teamId,
+          bannedChampionId: ban.championId,
+          draft,
+          game,
+        })
+      }
+    }
+  }
+
+  // Cache: key = "seriesId:gameNumber" → { ownLikelihoods, oppLikelihoods, available, threatRanking, metaRanking }
+  interface GameCache {
+    // Likelihoods per player, indexed by team side
+    likelihoodsByPlayer: Map<string, PickLikelihood[]> // playerId → likelihoods
+    available: Set<string>
+    threatRanking: string[] // championIds sorted by opponent threat desc
+    metaRanking: string[] // championIds sorted by 45-day meta count desc
+  }
+
+  const gameCache = new Map<string, GameCache>()
+
+  function getGameCache(draft: SeriesDraft, gameNumber: number): GameCache {
+    const key = `${draft.seriesId}:${gameNumber}`
+    const cached = gameCache.get(key)
+    if (cached) return cached
+
+    const game = draft.games.find(g => g.gameNumber === gameNumber)
+    if (!game) throw new Error(`Game ${gameNumber} not found in series ${draft.seriesId}`)
+
+    const burned = burnedChampions(draft.games, gameNumber)
+    const allChampionIds = new Set(draft.championsSeen)
+    const available = new Set<string>()
+    for (const c of allChampionIds) {
+      if (!burned.has(c)) available.add(c)
+    }
+
+    // Build per-player likelihoods (once per player per game)
+    const likelihoodsByPlayer = new Map<string, PickLikelihood[]>()
+    for (const pick of game.picks) {
+      const role = playerRole.get(pick.playerId)
+      if (!role) {
+        likelihoodsByPlayer.set(pick.playerId, [])
+        continue
+      }
+
+      const rc = draft.roleCounts?.[role]
+      if (!rc) {
+        likelihoodsByPlayer.set(pick.playerId, [])
+        continue
+      }
+
+      const rolePicks45 = new Map<string, number>()
+      const rolePicksAll = new Map<string, number>()
+      for (const [champId, counts] of Object.entries(rc.champions)) {
+        rolePicks45.set(champId, counts[0])
+        rolePicksAll.set(champId, counts[1])
+      }
+
+      const candidates = pickFeatures(
+        pick.playerId,
+        draft.scheduledStart,
+        picks,
+        burned,
+        rolePicks45,
+        rolePicksAll,
+        rc.total45,
+        rc.totalAll,
+        allChampionIds,
+      )
+      const likelihoods = pickLikelihoods(model, candidates)
+
+      // 2b: throw if a player with a role gets an empty likelihood list
+      if (likelihoods.length === 0) {
+        throw new Error(`Player ${pick.playerId} (${pick.playerName}) with role ${role} has empty likelihoods in series ${draft.seriesId} game ${gameNumber}`)
+      }
+
+      likelihoodsByPlayer.set(pick.playerId, likelihoods)
+    }
+
+    // Pre-compute threat ranking for all available champions
+    // We need to compute threat for both teams, but the ranking depends on which team is "opponent"
+    // Since we don't know the banning team yet, we'll compute threat rankings per team
+    // Actually, we can compute the threat ranking once per team per game
+    // For simplicity, compute threat ranking for each team's perspective
+
+    // 45-day meta ranking (once per series)
+    const cutoff45 = Date.parse(draft.scheduledStart) - 45 * 24 * 60 * 60 * 1000
+    const metaCounts = new Map<string, number>()
+    for (const p of picks) {
+      if (Date.parse(p.scheduledStart) >= cutoff45 && Date.parse(p.scheduledStart) < Date.parse(draft.scheduledStart)) {
+        metaCounts.set(p.championId, (metaCounts.get(p.championId) ?? 0) + 1)
+      }
+    }
+    const metaRanking: string[] = []
+    for (const [champId] of metaCounts) {
+      if (available.has(champId)) {
+        metaRanking.push(champId)
+      }
+    }
+    metaRanking.sort((a, b) => (metaCounts.get(b) ?? 0) - (metaCounts.get(a) ?? 0))
+
+    const cache: GameCache = {
+      likelihoodsByPlayer,
+      available,
+      threatRanking: [], // computed lazily per banning team
+      metaRanking,
+    }
+    gameCache.set(key, cache)
+    return cache
+  }
+
+  function evaluateBans(bans: GameBanCheck[]): LeverageBacktestGroup {
+    let leverageTop5 = 0, leverageTop8 = 0
+    let threatTop5 = 0, threatTop8 = 0
+    let metaTop5 = 0, metaTop8 = 0
+
+    // Group bans by (draft, game, banning team) to compute rankings once per group
+    const byTeamGame = new Map<string, GameBanCheck[]>()
+    for (const bc of bans) {
+      const teamKey = `${bc.draft.seriesId}:${bc.gameNumber}:${bc.banningTeamId}`
+      const list = byTeamGame.get(teamKey) ?? []
+      list.push(bc)
+      byTeamGame.set(teamKey, list)
+    }
+
+    // Cache threat rankings per (draft, gameNumber, banningTeamId)
+    const threatRankCache = new Map<string, string[]>()
+
+    for (const [, teamBans] of byTeamGame) {
+      const bc = teamBans[0]
+      const cache = getGameCache(bc.draft, bc.gameNumber)
+
+      const ownTeamId = bc.banningTeamId
+      const oppTeamId = bc.draft.teamIds.find(t => t !== bc.banningTeamId)
+      if (!oppTeamId) continue
+
+      const game = bc.game
+      const ownPlayerIds = game.picks.filter(p => p.teamId === ownTeamId).map(p => p.playerId)
+      const oppPlayerIds = game.picks.filter(p => p.teamId === oppTeamId).map(p => p.playerId)
+
+      const ownPlayerLikelihoods = ownPlayerIds.map(pid => cache.likelihoodsByPlayer.get(pid) ?? [])
+      const oppPlayerLikelihoods = oppPlayerIds.map(pid => cache.likelihoodsByPlayer.get(pid) ?? [])
+
+      const ownPlayers: PlayerRef[] = ownPlayerIds.map(pid => ({
+        id: pid,
+        name: game.picks.find(p => p.playerId === pid)?.playerName ?? '',
+        role: playerRole.get(pid) ?? null,
+      }))
+      const oppPlayers: PlayerRef[] = oppPlayerIds.map(pid => ({
+        id: pid,
+        name: game.picks.find(p => p.playerId === pid)?.playerName ?? '',
+        role: playerRole.get(pid) ?? null,
+      }))
+
+      // Compute threat ranking for this team's perspective (once per team per game)
+      const threatKey = `${bc.draft.seriesId}:${bc.gameNumber}:${bc.banningTeamId}`
+      let threatRanking = threatRankCache.get(threatKey)
+      if (!threatRanking) {
+        const threatEntries: { championId: string; threat: number }[] = []
+        for (const champId of cache.available) {
+          const t = threat(oppPlayerLikelihoods, champId, oppPlayers)
+          threatEntries.push({ championId: champId, threat: t.threat })
+        }
+        threatEntries.sort((a, b) => b.threat - a.threat)
+        threatRanking = threatEntries.map(e => e.championId)
+        threatRankCache.set(threatKey, threatRanking)
+      }
+
+      // Ban leverage ranking (once per team per game)
+      const leverageList = banLeverage(
+        oppPlayerLikelihoods,
+        ownPlayerLikelihoods,
+        oppPlayers,
+        ownPlayers,
+        cache.available,
+      )
+      const leverageRankMap = new Map<string, number>()
+      leverageList.forEach((e, i) => leverageRankMap.set(e.championId, i + 1))
+
+      // Check each ban
+      for (const ban of teamBans) {
+        const bannedChampionId = ban.bannedChampionId
+
+        // 1. Ban leverage
+        const leverageRank = leverageRankMap.get(bannedChampionId) ?? 0
+        if (leverageRank >= 1 && leverageRank <= 5) leverageTop5++
+        if (leverageRank >= 1 && leverageRank <= 8) leverageTop8++
+
+        // 2. Opponent threat alone
+        const threatRank = threatRanking.indexOf(bannedChampionId) + 1
+        if (threatRank >= 1 && threatRank <= 5) threatTop5++
+        if (threatRank >= 1 && threatRank <= 8) threatTop8++
+
+        // 3. 45-day meta
+        const metaRank = cache.metaRanking.indexOf(bannedChampionId) + 1
+        if (metaRank >= 1 && metaRank <= 5) metaTop5++
+        if (metaRank >= 1 && metaRank <= 8) metaTop8++
+      }
+    }
+
+    const n = bans.length
+    const pct = (v: number) => n > 0 ? Math.round(v / n * 1000) / 10 : 0
+
+    return {
+      name: '',
+      bans: n,
+      leverageTop5: pct(leverageTop5),
+      leverageTop8: pct(leverageTop8),
+      threatTop5: pct(threatTop5),
+      threatTop8: pct(threatTop8),
+      metaTop5: pct(metaTop5),
+      metaTop8: pct(metaTop8),
+    }
+  }
+
+  const games2PlusBans = allBanChecks.filter(b => b.gameNumber >= 2)
+
+  const all = evaluateBans(allBanChecks)
+  all.name = 'all games'
+
+  const games2Plus = evaluateBans(games2PlusBans)
+  games2Plus.name = 'games 2+'
+
+  return { all, games2Plus }
+}
+
 /**
  * Run a backtest over every game numbered 2 or higher in multi-game series.
  *

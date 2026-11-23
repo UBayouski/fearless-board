@@ -81,18 +81,47 @@ function App() {
           .then((d) => setSeriesDraft(d))
           .catch((err) => setSeriesError(String(err)))
       } else {
-        // 6: Default to most recent best-of-five at game 3
+        // 7: Default to most recent best-of-five where all 10 players have 20+ earlier games
         if (load.state === 'ready') {
-          const bo5 = load.index
+          const bo5s = load.index
             .filter((e) => e.gameCount === 5)
-            .sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart))[0]
-          if (bo5) {
-            setHash(bo5.seriesId, 3)
-            setSelectedSeries(bo5.seriesId)
+            .sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart))
+          // Check each series to find one where all players have 20+ prior games
+          let bestSeries: typeof bo5s[0] | null = null
+          for (const entry of bo5s) {
+            // Collect player IDs from this series in picks.json
+            const playerIds = new Set<string>()
+            for (const p of load.picks) {
+              if (p.seriesId === entry.seriesId) {
+                playerIds.add(p.playerId)
+              }
+            }
+            if (playerIds.size < 10) continue
+            let allHave20 = true
+            for (const pid of playerIds) {
+              // Count unique series this player appeared in before the candidate
+              const priorSeries = new Set(
+                load.picks
+                  .filter((p) => p.playerId === pid && p.scheduledStart < entry.scheduledStart)
+                  .map((p) => p.seriesId),
+              )
+              if (priorSeries.size < 20) {
+                allHave20 = false
+                break
+              }
+            }
+            if (allHave20) {
+              bestSeries = entry
+              break
+            }
+          }
+          if (bestSeries) {
+            setHash(bestSeries.seriesId, 3)
+            setSelectedSeries(bestSeries.seriesId)
             setSelectedGame(3)
             setSeriesError(null)
             setSeriesDraft(null)
-            fetch(`${import.meta.env.BASE_URL}data/${bo5.seriesId}.json`)
+            fetch(`${import.meta.env.BASE_URL}data/${bestSeries.seriesId}.json`)
               .then((r) => r.json() as Promise<SeriesDraft>)
               .then((d) => setSeriesDraft(d))
               .catch((err) => setSeriesError(String(err)))
@@ -194,6 +223,7 @@ function App() {
             playerMap={load.playerMap}
             selectedGame={selectedGame}
             onSelectGame={(gn) => selectGame(selectedSeries, gn)}
+            backtestStats={backtestStats ?? undefined}
           />
         ) : selectedSeries && seriesError ? (
           <p>Error loading series: {seriesError}</p>
@@ -202,25 +232,12 @@ function App() {
         )}
       </section>
 
-      {/* ── 3: Reliability footer from backtest.json ────────── */}
-      {backtestStats && (
-        <footer className="app-footer">
-          {backtestStats.modelTop5 != null && backtestStats.gamesPlayedTop5 != null ? (
-            <span className="backtest-note">
-              On later games, the actual pick was among the five most likely {backtestStats.modelTop5}% of the time
-              ({backtestStats.gamesPlayedTop5}% for a ranking by games played).
-            </span>
-          ) : (
-            <span className="backtest-note">
-              Across {backtestStats.gameCount} later games, {backtestStats.inPool}% of picks were in the pool shown
-              ({backtestStats.inPool20}% for players with 20+ earlier games).
-            </span>
-          )}
-          <span className="attribution">
-            Match data: GRID, provided for the Sky's The Limit 2026 hackathon. Not affiliated with or endorsed by Riot Games.
-          </span>
-        </footer>
-      )}
+      {/* ── Attribution footer ──────────────────────────────── */}
+      <footer className="app-footer">
+        <span className="attribution">
+          Match data: GRID, provided for the Sky's The Limit 2026 hackathon. Not affiliated with or endorsed by Riot Games.
+        </span>
+      </footer>
     </main>
   )
 }

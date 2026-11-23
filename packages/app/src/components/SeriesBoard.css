@@ -227,3 +227,15 @@
   overflow-y: auto;
   padding: 1rem;
 }
+
+/* ── 7: Backtest inline — directly under matrix ─────────────── */
+.backtest-inline {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+}
+
+.backtest-inline .backtest-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}

@@ -1,10 +1,10 @@
 // Builds the aggregate JSON the app loads, from a local clone of the hackathon data repo.
 // The data repo lives next to this project, never inside it (see README).
-import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, PickModel, PickExample } from '@fearless-board/shared'
-import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool, calibrateModel } from '@fearless-board/shared'
+import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool, calibrateModel, backtestLeverage } from '@fearless-board/shared'
 import {
   parseCSV,
   type GameRow,
@@ -982,9 +982,9 @@ console.log(`  Final log-likelihood: ${finalModel.meanLogLikelihood.toFixed(4)} 
 // Write model.json
 writeFileSync(resolve(outputDir, 'model.json'), JSON.stringify(finalModel))
 
-// ── Write series files with roleCounts and championsSeen ──────────────
+// ── Attach roleCounts and championsSeen to in-memory drafts AND write series files ──
 
-console.log('Writing series files with role counts...')
+console.log('Attaching role counts to series and writing files...')
 for (const draft of drafts) {
   const meta = seriesMeta.get(draft.seriesId)
   if (!meta) continue
@@ -1013,13 +1013,13 @@ for (const draft of drafts) {
     }
   }
 
-  // Read existing series file and augment it
-  const file = resolve(outputDir, `${draft.seriesId}.json`)
-  const existing = JSON.parse(readFileSync(file, 'utf-8'))
-  existing.roleCounts = roleCountsObj
-  existing.championsSeen = [...meta.allChampionIds]
+  // Attach to in-memory draft so backtestLeverage can read them
+  draft.roleCounts = roleCountsObj
+  draft.championsSeen = [...meta.allChampionIds]
 
-  writeFileSync(file, JSON.stringify(existing))
+  // Write series file once (with roleCounts and championsSeen already attached)
+  const file = resolve(outputDir, `${draft.seriesId}.json`)
+  writeFileSync(file, JSON.stringify(draft))
 }
 
 // ── Section 3a: Calibration ────────────────────────────────────────────
@@ -1046,6 +1046,29 @@ for (const item of evalExamples) {
 const testMeanLL = testLLCount > 0 ? testLL / testLLCount : 0
 console.log(`\n  Test log-likelihood: ${testMeanLL.toFixed(4)} (${testLLCount} examples)`)
 
+// ── Section 2: Ban leverage backtest ────────────────────────────────────
+
+console.log('\nRunning ban leverage backtest...')
+
+// Filter to test period series only (2026+)
+const testSeries = drafts.filter(d => d.scheduledStart >= splitDate)
+console.log(`  Test series: ${testSeries.length}`)
+
+const leverageResult = backtestLeverage(
+  testSeries,
+  allPicks,
+  evalModel,
+  playerRole,
+)
+
+console.log('  Ban leverage backtest:')
+for (const group of [leverageResult.all, leverageResult.games2Plus]) {
+  console.log(`  ${group.name} (${group.bans} bans):`)
+  console.log(`    Leverage  — Top 5: ${group.leverageTop5}%, Top 8: ${group.leverageTop8}%`)
+  console.log(`    Threat    — Top 5: ${group.threatTop5}%, Top 8: ${group.threatTop8}%`)
+  console.log(`    Meta      — Top 5: ${group.metaTop5}%, Top 8: ${group.metaTop8}%`)
+}
+
 // Write backtest.json with model results
 const backtestOutput = {
   generatedAt: new Date().toISOString(),
@@ -1059,6 +1082,7 @@ const backtestOutput = {
     groups: modelGroups,
     calibration,
   },
+  leverage: leverageResult,
 }
 writeFileSync(resolve(outputDir, 'backtest.json'), JSON.stringify(backtestOutput))
 

@@ -132,27 +132,39 @@ export function PoolMatrixCell({
   // Max probability for comfort bar
   const maxProb = top10.length > 0 ? Math.max(...top10.map((l) => l.probability)) : 0
 
+  // 7: Placeholder player — no earlier games in the data
+  const isPlaceholder = totalGames === 0
+
   return (
     <div className="pool-cell">
       <div className="pool-cell-header">
         <span className="pool-cell-name">{playerName}</span>
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
-      <div className="pool-cell-summary">
-        <span className="big-number display">{pool.credible.length}</span> left
-        {' · '}<span className="burned-count">{burnedCount} burned</span>
-      </div>
-      {useModel && (
-        <div className="pool-likelihood-summary">
-          {Math.round(likelihoodOnPlayed * 100)}% of likely picks are champions played before
+      {isPlaceholder ? (
+        <div className="pool-placeholder-note">
+          <div className="pool-placeholder-text">no earlier games in the data</div>
+          {useModel && <div className="pool-placeholder-sub">list based on recent picks in this role only</div>}
         </div>
+      ) : (
+        <>
+          <div className="pool-cell-summary">
+            <span className="big-number display">{pool.credible.length}</span> left
+            {' · '}<span className="burned-count">{burnedCount} burned</span>
+          </div>
+          {useModel && (
+            <div className="pool-likelihood-summary">
+              {Math.round(likelihoodOnPlayed * 100)}% of likely picks are champions played before
+            </div>
+          )}
+          <div className="burn-meter-row">
+            <div className="burn-meter-bar">
+              <div className="burn-meter-fill" style={{ width: `${Math.min(share, 100)}%` }} />
+            </div>
+            <span className="burn-meter-share">{share}% of games burned</span>
+          </div>
+        </>
       )}
-      <div className="burn-meter-row">
-        <div className="burn-meter-bar">
-          <div className="burn-meter-fill" style={{ width: `${Math.min(share, 100)}%` }} />
-        </div>
-        <span className="burn-meter-share">{share}% of games burned</span>
-      </div>
 
       {/* ── Reveal: unlisted pick ──────────────────────────── */}
       {hasReveal && isUnlisted && (
@@ -298,7 +310,7 @@ export function PoolMatrixCell({
         </div>
       )}
 
-      {totalGames < 10 && (
+      {!isPlaceholder && totalGames < 10 && (
         <div className="pool-limited-note">limited history ({totalGames} games)</div>
       )}
     </div>

@@ -110,6 +110,9 @@ again after section 3; then finish.
   default series as the most recent best-of-five in which all ten players have at least 20 earlier games.
 - **Flag placeholder accounts.** When a player has no earlier games, the cell shows the name with the note
   "no earlier games in the data" in muted text, not "0 left" as a large number and not an ember warning.
+  Since the pick model, the cell still lists ten likely champions for such a player; add under the note
+  "list based on recent picks in this role only", and hide the lines "0 left · 0 burned", "0% of likely
+  picks are champions played before" and the burn meter.
 - **Backtest line position.** It sits in the footer below a tall empty area. Put it directly under the
   matrix, and remove the empty space between the burned strip and the footer.
 - **Backtest wording.** Include the game count from the file: "Across 993 later games, ...".

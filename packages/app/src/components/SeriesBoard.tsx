@@ -14,6 +14,7 @@ export function SeriesBoard({
   playerMap,
   selectedGame,
   onSelectGame,
+  backtestStats,
 }: {
   draft: SeriesDraft
   picks: PickRow[]
@@ -22,6 +23,13 @@ export function SeriesBoard({
   playerMap: Map<string, PlayerRef>
   selectedGame: number | null
   onSelectGame: (gameNumber: number) => void
+  backtestStats?: {
+    modelTop5?: number
+    modelTop10?: number
+    gamesPlayedTop5?: number
+    gamesPlayedTop10?: number
+    gameCount?: number
+  }
 }) {
   const gameNumber = selectedGame ?? (() => {
     if (draft.games.length >= 3) return 3
@@ -173,6 +181,16 @@ export function SeriesBoard({
           gameNumber={gameNumber}
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
         />
+      )}
+
+      {/* ── 7: Backtest reliability line — directly under matrix ── */}
+      {backtestStats && backtestStats.modelTop5 != null && backtestStats.gamesPlayedTop5 != null && (
+        <div className="backtest-inline">
+          <span className="backtest-note">
+            On games 2 and later of 2026, the actual pick was among the five most likely {backtestStats.modelTop5}% of the time
+            ({backtestStats.gamesPlayedTop5}% for a ranking by games played).
+          </span>
+        </div>
       )}
 
       {/* ── History cards ─────────────────────────────────── */}

@@ -45,6 +45,29 @@ Write the numbers to `backtest.json` under `leverage` and print them. An earlier
 found it barely better than the plain list, so a small gain is a possible result. Report what comes out; do
 not tune, and do not hide the comparison.
 
+## 2b. Corrections after review of sections 1 and 2
+
+- **The backtest ran on empty likelihoods, so its numbers are noise.** `backtestLeverage` reads
+  `draft.roleCounts`, but the pipeline attaches `roleCounts` and `championsSeen` only to the object it
+  re-reads from disk when writing the series file, not to the series in memory. Every player's list is
+  therefore empty, every threat is zero, and the ranking is the order of the champion set. That is why
+  leverage and threat are identical (2.8% and 5.9%) and far below the plain list (13.9% and 21.1%).
+  - Attach `roleCounts` and `championsSeen` to the series in memory when they are computed, and write each
+    series file once.
+  - `backtestLeverage` must throw if a player with a role gets an empty likelihood list. A silent empty
+    result must not be possible. Add a test for that, and a test on a fixture where leverage and threat
+    rank differently.
+- **Speed.** Likelihoods are rebuilt for every ban, ten times per game, and the set of champions seen and
+  the 45-day counts are rebuilt by scanning all picks each time. Compute them once per series, and the
+  likelihoods once per game.
+- **Sanity check to report:** the opponent-threat list should not be far below the plain 45-day list. If it
+  is, look for a second fault before reporting.
+- **Design section 7 leftovers** (seen on series 2950569): the cell of a player with no earlier games still
+  shows "limited history (0 games)" in ember; remove it there, the muted note is enough. The reliability
+  line should start "On games 2 and later of 2026, ...".
+
+Stop after these corrections and report the backtest table and the run time of `pnpm data`.
+
 ## 3. Board
 
 A panel directly under the pool matrix, two columns in the same team order as the matrix. Per team:

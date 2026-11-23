@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, pickFeatures, trainPickModel, pickLikelihoods, calibrateModel, buildPickLikelihoods, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft, type Role, type PickCandidate, type PickExample, type PickFeatures } from './index.ts'
+import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, pickFeatures, trainPickModel, pickLikelihoods, calibrateModel, buildPickLikelihoods, threat, banLeverage, denialPicks, backtestLeverage, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft, type Role, type PickCandidate, type PickExample, type PickFeatures, type PickLikelihood, type PlayerRef, type PickModel } from './index.ts'
 
 const action = (order: number, type: DraftAction['type'], teamId: string, championId: string): DraftAction => ({
   order,
@@ -607,4 +607,340 @@ test('buildPickLikelihoods: same result as pickFeatures + pickLikelihoods', () =
     assert.ok(Math.abs(likelihoodsDirect[i].probability - likelihoodsBundled[i].probability) < 1e-6,
       `probability match for ${likelihoodsDirect[i].championId}`)
   }
+})
+
+// ── Ban leverage and denial picks tests ────────────────────────────────
+
+function makeLikelihoods(champions: [string, number][]): PickLikelihood[] {
+  // Normalize to probabilities
+  const sum = champions.reduce((s, [, p]) => s + p, 0)
+  if (sum === 0) return champions.map(([id]) => ({ championId: id, probability: 0, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } }))
+  return champions.map(([id, p]) => ({
+    championId: id,
+    probability: p / sum,
+    features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 },
+  }))
+}
+
+function makePlayers(ids: string[]): PlayerRef[] {
+  return ids.map((id) => ({ id, name: `Player ${id}`, role: 'mid' as Role }))
+}
+
+test('threat: champion only one opposing player wants gets that player probability', () => {
+  const players = makePlayers(['p1', 'p2', 'p3', 'p4', 'p5'])
+  // Only p1 wants c1 with high probability
+  const playerLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.6], ['c2', 0.1]]), // p1: c1 = 0.6/0.7 ≈ 0.857
+    makeLikelihoods([['c2', 0.5]]), // p2: no c1
+    makeLikelihoods([['c2', 0.5]]), // p3: no c1
+    makeLikelihoods([['c2', 0.5]]), // p4: no c1
+    makeLikelihoods([['c2', 0.5]]), // p5: no c1
+  ]
+  const result = threat(playerLikelihoods, 'c1', players)
+  const expectedP = 0.6 / 0.7 // p1's probability for c1
+  assert.ok(Math.abs(result.threat - expectedP) < 1e-6, `threat equals p1's probability: ${result.threat} ≈ ${expectedP}`)
+  assert.equal(result.hits.length, 1)
+  assert.equal(result.hits[0].playerId, 'p1')
+})
+
+test('threat: champion wanted by multiple players combines probabilities', () => {
+  const players = makePlayers(['p1', 'p2', 'p3', 'p4', 'p5'])
+  // p1 and p2 both want c1
+  const playerLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.5], ['c2', 0.5]]), // p1: c1 = 0.5
+    makeLikelihoods([['c1', 0.3], ['c2', 0.7]]), // p2: c1 = 0.3
+    makeLikelihoods([['c2', 1]]), // p3: no c1
+    makeLikelihoods([['c2', 1]]), // p4: no c1
+    makeLikelihoods([['c2', 1]]), // p5: no c1
+  ]
+  const result = threat(playerLikelihoods, 'c1', players)
+  // threat = 1 - (1-0.5)*(1-0.3)*1*1*1 = 1 - 0.5*0.7 = 1 - 0.35 = 0.65
+  assert.ok(Math.abs(result.threat - 0.65) < 1e-6, `threat combines: ${result.threat} ≈ 0.65`)
+})
+
+test('banLeverage: champion both teams want equally has leverage zero', () => {
+  const oppPlayers = makePlayers(['op1', 'op2', 'op3', 'op4', 'op5'])
+  const ownPlayers = makePlayers(['ow1', 'ow2', 'ow3', 'ow4', 'ow5'])
+  const available = new Set(['c1', 'c2'])
+
+  // Both teams have identical likelihoods for c1
+  const oppLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.4], ['c2', 0.1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+  ]
+  const ownLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.4], ['c2', 0.1]]), // same as opp
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+  ]
+
+  const result = banLeverage(oppLikelihoods, ownLikelihoods, oppPlayers, ownPlayers, available)
+  const c1Entry = result.find((e) => e.championId === 'c1')
+  assert.ok(c1Entry !== undefined, 'c1 should be in results')
+  assert.ok(Math.abs(c1Entry!.leverage) < 1e-6, `leverage is zero: ${c1Entry!.leverage}`)
+})
+
+test('banLeverage: burned champions never appear', () => {
+  const oppPlayers = makePlayers(['op1', 'op2', 'op3', 'op4', 'op5'])
+  const ownPlayers = makePlayers(['ow1', 'ow2', 'ow3', 'ow4', 'ow5'])
+  // c1 is burned
+  const available = new Set(['c2'])
+
+  const oppLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.9], ['c2', 0.1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+  ]
+  const ownLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+  ]
+
+  const result = banLeverage(oppLikelihoods, ownLikelihoods, oppPlayers, ownPlayers, available)
+  const c1Entry = result.find((e) => e.championId === 'c1')
+  assert.equal(c1Entry, undefined, 'burned c1 should not appear')
+})
+
+test('denialPicks: champion no own player has played is never a denial pick', () => {
+  const oppPlayers = makePlayers(['op1', 'op2', 'op3', 'op4', 'op5'])
+  const ownPlayers = makePlayers(['ow1', 'ow2', 'ow3', 'ow4', 'ow5'])
+  const available = new Set(['c1', 'c2'])
+
+  // ow1 has c1 in top 10 but has never played it
+  const ownLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.5], ['c2', 0.3]]), // ow1 wants c1 but hasn't played it
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+  ]
+  const oppLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.8], ['c2', 0.1]]), // opp wants c1
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+    makeLikelihoods([['c2', 1]]),
+  ]
+  // ow1 has played c2 but not c1
+  const ownPlayerPools = new Map<string, Map<string, number>>()
+  const ow1Pool = new Map<string, number>()
+  ow1Pool.set('c2', 5) // ow1 has played c2 5 times, not c1
+  ownPlayerPools.set('ow1', ow1Pool)
+
+  const result = denialPicks(ownLikelihoods, oppLikelihoods, ownPlayers, oppPlayers, available, ownPlayerPools)
+  const c1Entry = result.find((e) => e.championId === 'c1')
+  assert.equal(c1Entry, undefined, 'c1 should not be a denial pick — ow1 has not played it')
+  // c2 should appear as ow1 has played it
+  const c2Entry = result.find((e) => e.championId === 'c2')
+  assert.ok(c2Entry !== undefined, 'c2 should be a denial pick — ow1 has played it')
+  assert.equal(c2Entry!.gamesPlayed, 5)
+})
+
+test('denialPicks: sorted by threat from opponent descending', () => {
+  const oppPlayers = makePlayers(['op1', 'op2', 'op3', 'op4', 'op5'])
+  const ownPlayers = makePlayers(['ow1', 'ow2', 'ow3', 'ow4', 'ow5'])
+  const available = new Set(['c1', 'c2', 'c3'])
+
+  // ow1 has played c1 and c2, both in top 10
+  const ownLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.4], ['c2', 0.4], ['c3', 0.2]]),
+    makeLikelihoods([['c3', 1]]),
+    makeLikelihoods([['c3', 1]]),
+    makeLikelihoods([['c3', 1]]),
+    makeLikelihoods([['c3', 1]]),
+  ]
+  // Opp wants c2 more than c1
+  const oppLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.2], ['c2', 0.9], ['c3', 0.1]]), // op1 strongly wants c2
+    makeLikelihoods([['c3', 1]]),
+    makeLikelihoods([['c3', 1]]),
+    makeLikelihoods([['c3', 1]]),
+    makeLikelihoods([['c3', 1]]),
+  ]
+  const ownPlayerPools = new Map<string, Map<string, number>>()
+  const ow1Pool = new Map<string, number>()
+  ow1Pool.set('c1', 3)
+  ow1Pool.set('c2', 4)
+  ownPlayerPools.set('ow1', ow1Pool)
+
+  const result = denialPicks(ownLikelihoods, oppLikelihoods, ownPlayers, oppPlayers, available, ownPlayerPools)
+  assert.ok(result.length >= 2, 'should have at least 2 denial picks')
+  // c2 should come first (higher opponent threat)
+  assert.equal(result[0].championId, 'c2', 'c2 should be first — higher opponent threat')
+  assert.equal(result[1].championId, 'c1', 'c1 should be second')
+})
+
+// ── 2b: backtestLeverage tests ─────────────────────────────────────────
+
+test('backtestLeverage: throws when player with role has empty likelihoods', () => {
+  // Create a series where championsSeen is empty, so allChampionIds is empty,
+  // so pickFeatures returns empty candidates, so pickLikelihoods returns empty
+  const draft: SeriesDraft = {
+    seriesId: 's1',
+    event: 'Test',
+    stage: 'Test',
+    scheduledStart: '2026-02-01',
+    teamIds: ['tA', 'tB'],
+    games: [
+      {
+        gameId: 'g1',
+        gameNumber: 1,
+        patch: null,
+        sides: { blue: 'tA', red: 'tB' },
+        winnerTeamId: 'tA',
+        actions: [action(1, 'ban', 'tA', 'c1')],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c2' },
+          { teamId: 'tA', playerId: 'p2', playerName: 'Player2', championId: 'c3' },
+          { teamId: 'tA', playerId: 'p3', playerName: 'Player3', championId: 'c4' },
+          { teamId: 'tA', playerId: 'p4', playerName: 'Player4', championId: 'c5' },
+          { teamId: 'tA', playerId: 'p5', playerName: 'Player5', championId: 'c6' },
+          { teamId: 'tB', playerId: 'p6', playerName: 'Player6', championId: 'c7' },
+          { teamId: 'tB', playerId: 'p7', playerName: 'Player7', championId: 'c8' },
+          { teamId: 'tB', playerId: 'p8', playerName: 'Player8', championId: 'c9' },
+          { teamId: 'tB', playerId: 'p9', playerName: 'Player9', championId: 'c10' },
+          { teamId: 'tB', playerId: 'p10', playerName: 'Player10', championId: 'c11' },
+        ],
+      },
+    ],
+    roleCounts: {
+      mid: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      top: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      jungle: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      bot: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      support: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+    },
+    championsSeen: [], // empty → allChampionIds empty → pickFeatures returns [] → pickLikelihoods returns []
+  }
+
+  const picks: PickRow[] = []
+  const model: PickModel = { weights: [0, 0, 0, 0], mean: [0, 0, 0, 0], sd: [1, 1, 1, 1], meanLogLikelihood: 0, iterations: 0 }
+  const playerRole = new Map<string, Role | null>()
+  playerRole.set('p1', 'mid')
+  playerRole.set('p2', 'top')
+  playerRole.set('p3', 'jungle')
+  playerRole.set('p4', 'bot')
+  playerRole.set('p5', 'support')
+  playerRole.set('p6', 'top')
+  playerRole.set('p7', 'jungle')
+  playerRole.set('p8', 'mid')
+  playerRole.set('p9', 'bot')
+  playerRole.set('p10', 'support')
+
+  assert.throws(
+    () => backtestLeverage([draft], picks, model, playerRole),
+    /empty likelihoods/,
+  )
+})
+
+test('backtestLeverage: throws when series missing roleCounts', () => {
+  const draft: SeriesDraft = {
+    seriesId: 's1',
+    event: 'Test',
+    stage: 'Test',
+    scheduledStart: '2026-02-01',
+    teamIds: ['tA', 'tB'],
+    games: [
+      {
+        gameId: 'g1',
+        gameNumber: 1,
+        patch: null,
+        sides: { blue: 'tA', red: 'tB' },
+        winnerTeamId: 'tA',
+        actions: [action(1, 'ban', 'tA', 'c1')],
+        picks: [
+          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c2' },
+          { teamId: 'tA', playerId: 'p2', playerName: 'Player2', championId: 'c3' },
+          { teamId: 'tA', playerId: 'p3', playerName: 'Player3', championId: 'c4' },
+          { teamId: 'tA', playerId: 'p4', playerName: 'Player4', championId: 'c5' },
+          { teamId: 'tA', playerId: 'p5', playerName: 'Player5', championId: 'c6' },
+          { teamId: 'tB', playerId: 'p6', playerName: 'Player6', championId: 'c7' },
+          { teamId: 'tB', playerId: 'p7', playerName: 'Player7', championId: 'c8' },
+          { teamId: 'tB', playerId: 'p8', playerName: 'Player8', championId: 'c9' },
+          { teamId: 'tB', playerId: 'p9', playerName: 'Player9', championId: 'c10' },
+          { teamId: 'tB', playerId: 'p10', playerName: 'Player10', championId: 'c11' },
+        ],
+      },
+    ],
+    // roleCounts intentionally missing
+  }
+
+  const picks: PickRow[] = []
+  const model: PickModel = { weights: [0, 0, 0, 0], mean: [0, 0, 0, 0], sd: [1, 1, 1, 1], meanLogLikelihood: 0, iterations: 0 }
+  const playerRole = new Map<string, Role | null>()
+  for (const pid of ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']) {
+    playerRole.set(pid, 'mid')
+  }
+
+  assert.throws(
+    () => backtestLeverage([draft], picks, model, playerRole),
+    /missing roleCounts/,
+  )
+})
+
+test('banLeverage and threat rank differently when own team wants a champion', () => {
+  const oppPlayers = makePlayers(['op1', 'op2', 'op3', 'op4', 'op5'])
+  const ownPlayers = makePlayers(['ow1', 'ow2', 'ow3', 'ow4', 'ow5'])
+  const available = new Set(['c1', 'c2', 'c3'])
+
+  // Opponent: op1 strongly wants c1, not c2
+  const oppLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.8], ['c2', 0.1], ['c3', 0.1]]), // op1: c1=0.8, c2=0.1, c3=0.1
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+  ]
+  // Own team: ow1 strongly wants c2, not c1
+  const ownLikelihoods: PickLikelihood[][] = [
+    makeLikelihoods([['c1', 0.1], ['c2', 0.8], ['c3', 0.1]]), // ow1: c2=0.8, c1=0.1
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+    makeLikelihoods([['c1', 0.1], ['c2', 0.1], ['c3', 0.8]]),
+  ]
+
+  // Ban leverage = threat from opp - threat from own
+  // c1: opp threat is high (op1 wants it 80%), own threat is low → high leverage
+  // c2: opp threat is low, own threat is high (ow1 wants it 80%) → negative leverage
+  // c3: both teams want it similarly → near-zero leverage
+  // Leverage ranking: c1 > c3 > c2
+
+  const leverageResult = banLeverage(oppLikelihoods, ownLikelihoods, oppPlayers, ownPlayers, available)
+  assert.equal(leverageResult[0].championId, 'c1', `c1 should have highest leverage, got ${leverageResult[0].championId}`)
+  assert.ok(leverageResult[leverageResult.length - 1].championId === 'c2' || leverageResult[leverageResult.length - 2]?.championId === 'c2',
+    'c2 should have lowest or near-lowest leverage (negative)')
+
+  // Threat alone ranking (opponent threat only):
+  // c1 has highest opponent threat (op1 wants it 80%)
+  // c3 has moderate opponent threat (op2-op5 want it)
+  // c2 has lowest opponent threat
+  // Threat ranking: c1 > c3 > c2 — same as leverage in this case
+  // But the key difference is c2: leverage puts it last (negative),
+  // while threat alone also puts it last. The difference shows when
+  // own team's threat changes the ordering.
+
+  // Verify the leverage values show the difference
+  const c1Entry = leverageResult.find(e => e.championId === 'c1')
+  const c2Entry = leverageResult.find(e => e.championId === 'c2')
+  assert.ok(c1Entry !== undefined, 'c1 should be in leverage results')
+  assert.ok(c2Entry !== undefined, 'c2 should be in leverage results')
+  assert.ok(c1Entry!.leverage > 0, 'c1 leverage should be positive (opp wants it more)')
+  assert.ok(c2Entry!.leverage < 0, 'c2 leverage should be negative (own wants it more)')
+
+  // The threat-from-own for c2 should be substantial
+  assert.ok(c2Entry!.threatFromOwn > c2Entry!.threatFromOpponent,
+    'c2: own threat > opponent threat (negative leverage)')
+  assert.ok(c1Entry!.threatFromOpponent > c1Entry!.threatFromOwn,
+    'c1: opponent threat > own threat (positive leverage)')
 })

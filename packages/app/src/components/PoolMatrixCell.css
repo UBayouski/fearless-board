@@ -16,6 +16,24 @@
   min-height: 4rem;
 }
 
+/* ── 7: Placeholder player note ─────────────────────────────── */
+.pool-placeholder-note {
+  margin-bottom: 0.4rem;
+}
+
+.pool-placeholder-text {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pool-placeholder-sub {
+  font-size: 0.7rem;
+  color: var(--muted);
+  opacity: 0.7;
+  margin-top: 0.1rem;
+}
+
 .pool-cell-header {
   display: flex;
   align-items: baseline;
