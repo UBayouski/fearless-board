@@ -32,6 +32,15 @@
   color: var(--text);
 }
 
+.pool-lineup-note {
+  display: block;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 0.15rem;
+}
+
 .pool-matrix-row {
   display: grid;
   grid-template-columns: 4rem 1fr 1fr;

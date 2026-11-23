@@ -15,6 +15,7 @@
     "data": "pnpm --filter @fearless-board/pipeline start",
     "test": "node --test \"packages/*/src/**/*.test.ts\"",
     "typecheck": "tsc -p packages/shared && tsc -p packages/pipeline && pnpm --filter @fearless-board/app exec tsc -b",
+    "lint": "pnpm --filter @fearless-board/app lint",
     "check:data": "node scripts/check-no-data.mjs"
   },
   "devDependencies": {

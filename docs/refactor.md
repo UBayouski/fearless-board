@@ -76,3 +76,59 @@ done yet:
   `src/model.ts` and `src/backtests.ts` as in section 3. Split `index.test.ts` (1,148 lines) by the same
   four areas.
 - "limited history" on ban rows (section 4) is missing.
+- **WebStorm inspections** (run on the changed files after the work above; most should be gone by then):
+  - `shared/src/evaluation.ts`: the code that turns a series' role counts into the two maps is repeated
+    three times (near lines 188, 440 and 675). Use one helper, or `gamePlan`.
+  - `shared/src/model.ts`: the score calculation in the trainer is repeated (lines 146 and 177). One helper.
+  - Redundant local variables: `result` in `calibrateModel`, `players` in `lineupBefore`.
+  - `app/src/components/PoolMatrixCell.tsx` line 173: import the `CSSProperties` type from `react` instead
+    of using the `React` global.
+  - The 4 and 5 line repeats in the pipeline can stay unless the split removes them anyway.
+
+## 6. Corrections after the second review
+
+- **The app crashes on every series.** The page is blank; the console shows
+  `Cannot read properties of undefined (reading 'roleMap')`. In `gamePlan` (`shared/src/model.ts`, near line
+  666) the code destructures `[ownPlayersData, oppPlayersData]` from a list that was filtered down to the
+  own team only, so `oppPlayersData` is always undefined. Look both teams up by id.
+  - Typecheck, the 46 tests, lint and the build all passed with the app dead. Add what would have caught it:
+    - a test that runs `gamePlan` on a fixture series with two teams and checks that both teams get ban
+      leverage and that the opponent's players appear in it;
+    - a render test in the app package: render `SeriesBoard` to a string with `react-dom/server` on a small
+      fixture (two teams, three games, a model, role counts) and assert that both team names, ten player
+      names and the panel title are in the output. Run it as part of `pnpm test`.
+- **A player without a role overwrites the top laner.** `roleMap.set(role ?? 'top', ...)` puts every player
+  with no role into the top slot. Keep such players in a separate list and show them in the matrix under
+  the label "role unknown"; they take no part in ban leverage.
+- **`lineupChanged` is one flag for both teams.** Make it per team, so the note appears under the right
+  team name.
+- **Lint.** `.oxlintrc.json` already enables `react/rules-of-hooks`, and oxlint does report a hook called
+  after an early return (checked on a sample file). So remove `packages/app/scripts/check-hooks.mjs`,
+  `packages/app/eslint.config.js` and the ESLint packages added to `packages/app/package.json`; the lint
+  script is `oxlint`.
+- **`index.test.ts` is still one file** of 1,177 lines; split it by rules, model and evaluation.
+
+After the fix, open the built app once (`pnpm --filter @fearless-board/app preview`) and confirm the board
+shows for the default series before reporting.
+
+## 7. Corrections after the third review
+
+The app renders again, the lineup note works (checked on series 2825046), and the cells now show exactly
+what a direct calculation gives. Four things remain:
+
+- **The "why" line on the tiles was lost.** It now reads "played 5 times", which repeats "5g" from the line
+  above. Restore what `docs/pick-model.md` sections 3a and 3b define: the role share ("15% of recent top
+  picks", or "of all top picks" when the 45-day window is empty), followed by "· not played" for champions
+  the player has not played. Put the share calculation in `gamePlan` (it has the role counts), so the cell
+  only renders it.
+- **"limited history" on ban rows counts the wrong thing.** `LeveragePanel.tsx` line 49 adds the number of
+  different champions in the pool, not the number of games, so Hans Sama, Alvaro and Labrov are flagged.
+  `gamePlan` should return each player's number of earlier games (sum of `games` over the pool), and the
+  panel uses that with `< 20`. Show the note in muted text, not in ember italics.
+- **Players with almost no history.** Gakgos (one earlier game) shows "0 left", "0% of likely picks are
+  champions played before" and "100% of games burned". Use the no-history form of `docs/design.md` section 7
+  for any player with fewer than 5 earlier games, with the note "n earlier games in the data".
+- **The render test is missing.** Section 6 asked for a test in the app package that renders `SeriesBoard`
+  to a string with `react-dom/server` on a small fixture and checks for both team names, ten player names
+  and the panel title, as part of `pnpm test`. The root test script only runs `packages/*/src/**/*.test.ts`;
+  make it include the app's test (`.test.tsx`). Also remove the empty folder `packages/app/scripts`.

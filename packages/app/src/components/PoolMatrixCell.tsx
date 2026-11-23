@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import type { ChampionRef, PickLikelihood, PickModel, PickRow, PoolEntry, Role } from '@fearless-board/shared'
-import { burnedGameShare, buildPickLikelihoods } from '@fearless-board/shared'
+import { useState, type CSSProperties } from 'react'
+import type { ChampionRef, PickLikelihood, PoolEntry, Role } from '@fearless-board/shared'
+import { burnedGameShare } from '@fearless-board/shared'
 import './PoolMatrixCell.css'
 
 function roleLabel(role: Role | null): string {
@@ -8,7 +8,6 @@ function roleLabel(role: Role | null): string {
 }
 
 export function PoolMatrixCell({
-  playerId,
   playerName,
   role,
   pool,
@@ -16,12 +15,9 @@ export function PoolMatrixCell({
   championMap,
   seriesDate,
   revealedPick,
-  model,
-  picks,
-  roleCounts,
-  allChampionIds,
+  likelihoods,
+  substitute,
 }: {
-  playerId: string
   playerName: string
   role: Role | null
   pool: { credible: PoolEntry[]; burned: PoolEntry[] }
@@ -29,10 +25,8 @@ export function PoolMatrixCell({
   championMap: Map<string, ChampionRef>
   seriesDate: string
   revealedPick?: { championId: string; rank: number } | null
-  model?: PickModel
-  picks?: readonly PickRow[]
-  roleCounts?: Record<string, { total45: number; totalAll: number; champions: Record<string, [number, number]> }>
-  allChampionIds?: Set<string>
+  likelihoods: PickLikelihood[]
+  substitute?: boolean
 }) {
   const totalGames = pool.credible.length + pool.burned.length
   const burnedCount = pool.burned.length
@@ -55,21 +49,6 @@ export function PoolMatrixCell({
     return weeks > 12
   }
 
-  // ── Model-based likelihoods ──────────────────────────────────
-  const likelihoods: PickLikelihood[] = (() => {
-    if (!model || !picks || !role || !roleCounts || !allChampionIds) return []
-    return buildPickLikelihoods(
-      model,
-      playerId,
-      role,
-      seriesDate,
-      picks,
-      burnedSet,
-      roleCounts,
-      allChampionIds,
-    )
-  })()
-
   // If no model, fall back to pool-based display
   const useModel = likelihoods.length > 0
 
@@ -89,30 +68,14 @@ export function PoolMatrixCell({
     ? likelihoods.filter((l) => poolMap.has(l.championId)).reduce((sum, l) => sum + l.probability, 0)
     : 0
 
-  // 3b: Feature explanation — role share only for played champions, add "not played" for others
+  // Feature explanation from pool data
   const featureExplanation = (likelihood: PickLikelihood): string => {
-    const rc = roleCounts && role ? roleCounts[role] : null
-    const n45 = rc?.champions[likelihood.championId]?.[0] ?? 0
-    const nAll = rc?.champions[likelihood.championId]?.[1] ?? 0
-    const total45 = rc?.total45 ?? 0
-    const totalAll = rc?.totalAll ?? 0
-
     const poolEntry = poolMap.get(likelihood.championId)
-    const played = poolEntry !== undefined
-
-    // Recent share (45-day window)
-    let sharePart: string
-    if (total45 > 0) {
-      const pct = Math.round((n45 / total45) * 100)
-      sharePart = `${pct}% of recent ${role} picks`
+    if (poolEntry) {
+      return `played ${poolEntry.games} times`
     } else {
-      // Fall back to all-time
-      const pct = totalAll > 0 ? Math.round((nAll / totalAll) * 100) : 0
-      sharePart = `${pct}% of all ${role} picks`
+      return `not played`
     }
-
-    // 3b: For played champions, show only the role share; for others, add "not played"
-    return played ? sharePart : `${sharePart} · not played`
   }
 
   const hasReveal = revealedPick !== undefined
@@ -138,7 +101,10 @@ export function PoolMatrixCell({
   return (
     <div className="pool-cell">
       <div className="pool-cell-header">
-        <span className="pool-cell-name">{playerName}</span>
+        <span className="pool-cell-name">
+          {playerName}
+          {substitute && <span className="pool-substitute-label"> substitute</span>}
+        </span>
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
       {isPlaceholder ? (
@@ -204,7 +170,7 @@ export function PoolMatrixCell({
                 key={l.championId}
                 type="button"
                 className={`champ-tile-btn ${highlighted ? 'pool-highlighted' : ''} ${stale ? 'stale' : ''} ${!played ? 'pool-not-played' : ''}`}
-                style={{ '--comfort': `${comfortShare}%` } as React.CSSProperties}
+                style={{ '--comfort': `${comfortShare}%` } as CSSProperties}
                 aria-label={`${champ?.name ?? l.championId}, ${probPct}% likelihood, ${explanation}`}
               >
                 <span className="champ-tile-inner">

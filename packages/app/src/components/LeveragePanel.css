@@ -124,6 +124,14 @@
   color: var(--muted);
 }
 
+.leverage-limited-history {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--ember);
+  font-style: italic;
+  margin-top: 0.1rem;
+}
+
 .leverage-none {
   font-size: 0.75rem;
   color: var(--muted);

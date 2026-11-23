@@ -1,145 +1,55 @@
-import { useMemo } from 'react'
-import type { ChampionRef, GameDraft, PickModel, PickRow, PlayerRef, SeriesDraft, TeamRef } from '@fearless-board/shared'
-import { banLeverage, buildPickLikelihoods, burnedChampions, denialPicks, playerPool, type BanLeverageEntry, type DenialPickEntry, type PickLikelihood } from '@fearless-board/shared'
+import type { ChampionRef, GameDraft, GamePlan, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import './LeveragePanel.css'
 
 export function LeveragePanel({
+  plan,
   draft,
-  picks,
   teamMap,
   championMap,
-  playerMap,
-  gameNumber,
-  model,
   revealedGame,
 }: {
+  plan: GamePlan
   draft: SeriesDraft
-  picks: PickRow[]
   teamMap: Map<string, TeamRef>
   championMap: Map<string, ChampionRef>
-  playerMap: Map<string, PlayerRef>
-  gameNumber: number
-  model?: PickModel
   revealedGame?: GameDraft
 }) {
-  const burned = burnedChampions(draft.games, gameNumber)
-  const allChampionIds = draft.championsSeen ? new Set(draft.championsSeen) : new Set<string>()
-  const available = new Set<string>()
-  for (const c of allChampionIds) {
-    if (!burned.has(c)) available.add(c)
-  }
-
-  const game = draft.games.find((g) => g.gameNumber === gameNumber)
-
-  // Build per-player likelihoods
-  const likelihoodsByPlayer = useMemo(() => {
-    const map = new Map<string, PickLikelihood[]>()
-    if (!game || !model) return map
-    for (const pick of game.picks) {
-      const player = playerMap.get(pick.playerId)
-      if (!player || !player.role) {
-        map.set(pick.playerId, [])
-        continue
-      }
-      const lks = buildPickLikelihoods(
-        model,
-        pick.playerId,
-        player.role,
-        draft.scheduledStart,
-        picks,
-        burned,
-        draft.roleCounts ?? {},
-        allChampionIds,
-      )
-      map.set(pick.playerId, lks)
-    }
-    return map
-  }, [game?.picks, playerMap, model, draft.scheduledStart, picks, burned, draft.roleCounts, allChampionIds])
-
-  // Build per-player pools (for denial picks)
-  const playerPools = useMemo(() => {
-    const pools = new Map<string, Map<string, number>>()
-    if (!game) return pools
-    for (const pick of game.picks) {
-      const pool = playerPool(picks, pick.playerId, draft.scheduledStart)
-      const champGames = new Map<string, number>()
-      for (const entry of pool) {
-        champGames.set(entry.championId, entry.games)
-      }
-      pools.set(pick.playerId, champGames)
-    }
-    return pools
-  }, [game?.picks, picks, draft.scheduledStart])
-
-  // If no model loaded yet or no game, don't render
-  if (!model || !game) return null
-
-  // Compute leverage and denial for each team
-  const teamData = useMemo(() => {
-    return draft.teamIds.map((teamId) => {
-      const oppTeamId = draft.teamIds.find((t) => t !== teamId)
-      if (!oppTeamId) return null
-
-      const ownPlayerIds = game.picks.filter((p) => p.teamId === teamId).map((p) => p.playerId)
-      const oppPlayerIds = game.picks.filter((p) => p.teamId === oppTeamId).map((p) => p.playerId)
-
-      const ownPlayerLikelihoods = ownPlayerIds.map((pid) => likelihoodsByPlayer.get(pid) ?? [])
-      const oppPlayerLikelihoods = oppPlayerIds.map((pid) => likelihoodsByPlayer.get(pid) ?? [])
-
-      const ownPlayers: PlayerRef[] = ownPlayerIds.map((pid) => ({
-        id: pid,
-        name: game.picks.find((p) => p.playerId === pid)?.playerName ?? '',
-        role: playerMap.get(pid)?.role ?? null,
-      }))
-      const oppPlayers: PlayerRef[] = oppPlayerIds.map((pid) => ({
-        id: pid,
-        name: game.picks.find((p) => p.playerId === pid)?.playerName ?? '',
-        role: playerMap.get(pid)?.role ?? null,
-      }))
-
-      const leverage = banLeverage(oppPlayerLikelihoods, ownPlayerLikelihoods, oppPlayers, ownPlayers, available)
-      const denial = denialPicks(
-        ownPlayerLikelihoods,
-        oppPlayerLikelihoods,
-        ownPlayers,
-        oppPlayers,
-        available,
-        playerPools,
-      )
-
-      return { teamId, leverage, denial }
-    }).filter(Boolean) as { teamId: string; leverage: BanLeverageEntry[]; denial: DenialPickEntry[] }[]
-  }, [draft.teamIds, game.picks, likelihoodsByPlayer, playerMap, available, playerPools])
+  const { leverage, players } = plan
 
   // Build set of actually banned champions per team (for reveal)
-  const bannedByTeam = useMemo(() => {
-    if (!revealedGame) return new Map<string, Set<string>>()
-    const map = new Map<string, Set<string>>()
+  const bannedByTeam = new Map<string, Set<string>>()
+  if (revealedGame) {
     for (const teamId of draft.teamIds) {
-      map.set(teamId, new Set<string>())
+      bannedByTeam.set(teamId, new Set<string>())
     }
     for (const action of revealedGame.actions) {
       if (action.type === 'ban') {
-        const set = map.get(action.teamId)
+        const set = bannedByTeam.get(action.teamId)
         if (set) set.add(action.championId)
       }
     }
-    return map
-  }, [revealedGame, draft.teamIds])
+  }
 
   // Build set of actually picked champions per team (for reveal)
-  const pickedByTeam = useMemo(() => {
-    if (!revealedGame) return new Map<string, Set<string>>()
-    const map = new Map<string, Set<string>>()
+  const pickedByTeam = new Map<string, Set<string>>()
+  if (revealedGame) {
     for (const teamId of draft.teamIds) {
-      map.set(teamId, new Set<string>())
+      pickedByTeam.set(teamId, new Set<string>())
     }
     for (const pick of revealedGame.picks) {
-      const set = map.get(pick.teamId)
+      const set = pickedByTeam.get(pick.teamId)
       if (set) set.add(pick.championId)
     }
-    return map
-  }, [revealedGame, draft.teamIds])
+  }
+
+  // Build player prior games count for "limited history" note
+  const playerPriorGames = new Map<string, number>()
+  for (const [, roleMap] of players) {
+    for (const [, gp] of roleMap) {
+      const totalGames = gp.pool.credible.length + gp.pool.burned.length
+      playerPriorGames.set(gp.playerId, totalGames)
+    }
+  }
 
   return (
     <div className="leverage-panel">
@@ -150,7 +60,10 @@ export function LeveragePanel({
         A ban removes a champion for this game. A pick removes it for both teams for the rest of the series.
       </div>
       <div className="leverage-panel-grid">
-        {teamData.map(({ teamId, leverage, denial }) => {
+        {draft.teamIds.map((teamId) => {
+          const teamLeverage = leverage.get(teamId)
+          if (!teamLeverage) return null
+          const { leverage: leverageEntries, denial } = teamLeverage
           const team = teamMap.get(teamId)
           return (
             <div key={teamId} className="leverage-team-column">
@@ -161,7 +74,7 @@ export function LeveragePanel({
                 <div className="leverage-section-heading">Bans to consider</div>
                 {(() => {
                   // Filter: only rows where net value > 2 percentage points
-                  const filtered = leverage.filter((entry) => {
+                  const filtered = leverageEntries.filter((entry) => {
                     const net = Math.round((entry.threatFromOpponent - entry.threatFromOwn) * 100)
                     return net > 2
                   })
@@ -182,6 +95,14 @@ export function LeveragePanel({
                     // Build "you" string: percentage with top player at ≥5%
                     const ownTop = entry.ownHits.find((h) => h.probability >= 0.05)
                     const youStr = ownTop ? `you ${ownPct}% (${ownTop.playerName} ${Math.round(ownTop.probability * 100)}%)` : `you ${ownPct}%`
+                    // Section 4: "limited history" for players with <20 earlier games
+                    const limitedHistoryPlayers: string[] = []
+                    for (const h of entry.opponentHits) {
+                      if ((playerPriorGames.get(h.playerId) ?? 0) < 20) limitedHistoryPlayers.push(h.playerName)
+                    }
+                    for (const h of entry.ownHits) {
+                      if ((playerPriorGames.get(h.playerId) ?? 0) < 20 && !limitedHistoryPlayers.includes(h.playerName)) limitedHistoryPlayers.push(h.playerName)
+                    }
                     return (
                       <div key={entry.championId} className="leverage-row">
                         <div className="leverage-row-left">
@@ -197,6 +118,9 @@ export function LeveragePanel({
                             />
                           </div>
                           <span className="leverage-detail">{themStr} · {youStr}</span>
+                          {limitedHistoryPlayers.length > 0 && (
+                            <span className="leverage-limited-history">limited history: {limitedHistoryPlayers.join(', ')}</span>
+                          )}
                         </div>
                       </div>
                     )

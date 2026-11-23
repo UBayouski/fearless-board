@@ -1,96 +1,46 @@
 import { useMemo } from 'react'
-import type { ChampionRef, GameDraft, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
-import { burnedChampions, crediblePool, playerPool } from '@fearless-board/shared'
+import type { ChampionRef, GameDraft, GamePlan, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import { PoolMatrixCell } from './PoolMatrixCell'
 import './PoolMatrix.css'
 
 const ROLE_ORDER: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
 
 export function PoolMatrix({
+  plan,
   draft,
-  picks,
   teamMap,
   championMap,
-  playerMap,
   gameNumber,
-  model,
   revealedGame,
 }: {
+  plan: GamePlan
   draft: SeriesDraft
-  picks: PickRow[]
   teamMap: Map<string, TeamRef>
   championMap: Map<string, ChampionRef>
-  playerMap: Map<string, PlayerRef>
   gameNumber: number
-  model?: PickModel
   revealedGame?: GameDraft
 }) {
-  const burned = burnedChampions(draft.games, gameNumber)
+  const { burnedByGame, players } = plan
 
-  const burnedByGame = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const g of draft.games) {
-      if (g.gameNumber >= gameNumber) break
-      if (g.picks.length > 0) {
-        for (const p of g.picks) {
-          if (!map.has(p.championId)) {
-            map.set(p.championId, g.gameNumber)
-          }
-        }
-      }
-    }
-    return map
-  }, [draft.games, gameNumber])
-
-  const playerGrid = useMemo(() => {
-    const grid = new Map<string, Map<Role, PlayerRef>>()
-    for (const teamId of draft.teamIds) {
-      const teamPlayers = new Map<Role, PlayerRef>()
-      for (const role of ROLE_ORDER) {
-        for (const game of draft.games) {
-          for (const pick of game.picks) {
-            if (pick.teamId === teamId) {
-              const player = playerMap.get(pick.playerId)
-              if (player && player.role === role) {
-                teamPlayers.set(role, player)
-                break
-              }
-            }
-          }
-          if (teamPlayers.has(role)) break
-        }
-      }
-      grid.set(teamId, teamPlayers)
-    }
-    return grid
-  }, [draft.teamIds, draft.games, playerMap])
-
+  // Build revealed pick map: for each player, what champion they actually picked and its rank
   const revealedPickMap = useMemo(() => {
     if (!revealedGame) return undefined
     const map = new Map<string, { championId: string; rank: number } | null>()
-    const picksByTeam = new Map<string, typeof revealedGame.picks>()
-    for (const p of revealedGame.picks) {
-      const list = picksByTeam.get(p.teamId) ?? []
-      list.push(p)
-      picksByTeam.set(p.teamId, list)
-    }
-    for (const teamId of draft.teamIds) {
-      const teamPicks = picksByTeam.get(teamId) ?? []
-      for (const pick of teamPicks) {
-        const player = playerMap.get(pick.playerId)
-        if (!player) continue
-        const pool = playerPool(picks, player.id, draft.scheduledStart)
-        const { credible } = crediblePool(pool, burned)
-        const rank = credible.findIndex((e) => e.championId === pick.championId) + 1
+    for (const [, roleMap] of players) {
+      for (const [, gp] of roleMap) {
+        // Find this player's actual pick in the revealed game
+        const actualPick = revealedGame.picks.find(p => p.playerId === gp.playerId)
+        if (!actualPick) continue
+        const rank = gp.likelihoods.findIndex(l => l.championId === actualPick.championId) + 1
         if (rank > 0) {
-          map.set(pick.playerId, { championId: pick.championId, rank })
+          map.set(gp.playerId, { championId: actualPick.championId, rank })
         } else {
-          map.set(pick.playerId, null)
+          map.set(gp.playerId, null)
         }
       }
     }
     return map
-  }, [revealedGame, picks, draft.scheduledStart, draft.teamIds, playerMap, burned])
+  }, [revealedGame, players])
 
   // Reveal summary: count picks in pool
   const revealSummary = useMemo(() => {
@@ -116,7 +66,14 @@ export function PoolMatrix({
           <div className="pool-matrix-corner"></div>
           {draft.teamIds.map((teamId) => {
             const team = teamMap.get(teamId)
-            return <div key={teamId} className="pool-matrix-team-header">{team?.name ?? teamId}</div>
+            const name = team?.name ?? teamId
+            const teamLineupChanged = plan.lineupChanged.get(teamId)
+            return (
+              <div key={teamId} className="pool-matrix-team-header">
+                {name}
+                {teamLineupChanged && <span className="pool-lineup-note">lineup changed during this series; showing the players of game {gameNumber - 1 >= 1 ? gameNumber - 1 : 1}</span>}
+              </div>
+            )
           })}
         </div>
 
@@ -124,34 +81,63 @@ export function PoolMatrix({
           <div key={role} className="pool-matrix-row">
             <div className="pool-matrix-role-label">{role.toUpperCase()}</div>
             {draft.teamIds.map((teamId) => {
-              const player = playerGrid.get(teamId)?.get(role)
-              if (!player) {
+              const gp = players.find(([tid]) => tid === teamId)?.[1].get(role)
+              if (!gp) {
                 return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
               }
-              const pool = playerPool(picks, player.id, draft.scheduledStart)
-              const { credible, burned: burnedEntries } = crediblePool(pool, burned)
-              const allChampionIds = draft.championsSeen ? new Set(draft.championsSeen) : undefined
               return (
                 <div key={teamId} className="pool-matrix-cell">
                   <PoolMatrixCell
-                    playerId={player.id}
-                    playerName={player.name}
-                    role={player.role}
-                    pool={{ credible, burned: burnedEntries }}
+                    playerName={gp.playerName}
+                    role={gp.role}
+                    pool={gp.pool}
                     burnedByGame={burnedByGame}
                     championMap={championMap}
                     seriesDate={draft.scheduledStart}
-                    revealedPick={revealedPickMap?.get(player.id)}
-                    model={model}
-                    picks={picks}
-                    roleCounts={draft.roleCounts}
-                    allChampionIds={allChampionIds}
+                    revealedPick={revealedPickMap?.get(gp.playerId)}
+                    likelihoods={gp.likelihoods}
+                    substitute={gp.substitute}
                   />
                 </div>
               )
             })}
           </div>
         ))}
+
+        {/* Players without a known role */}
+        {(() => {
+          const hasUnknown = plan.unknownRolePlayers.some(([, gps]) => gps.length > 0)
+          if (!hasUnknown) return null
+          return (
+            <div className="pool-matrix-row">
+              <div className="pool-matrix-role-label">ROLE UNKNOWN</div>
+              {draft.teamIds.map((teamId) => {
+                const unknownGps = plan.unknownRolePlayers.find(([tid]) => tid === teamId)?.[1] ?? []
+                if (unknownGps.length === 0) {
+                  return <div key={teamId} className="pool-cell pool-cell-empty">—</div>
+                }
+                return (
+                  <div key={teamId} className="pool-matrix-cell">
+                    {unknownGps.map((gp) => (
+                      <PoolMatrixCell
+                        key={gp.playerId}
+                        playerName={gp.playerName}
+                        role={null}
+                        pool={gp.pool}
+                        burnedByGame={burnedByGame}
+                        championMap={championMap}
+                        seriesDate={draft.scheduledStart}
+                        revealedPick={revealedPickMap?.get(gp.playerId)}
+                        likelihoods={gp.likelihoods}
+                        substitute={gp.substitute}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
       </div>
     </>
   )

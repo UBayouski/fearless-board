@@ -47,6 +47,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.pool-substitute-label {
+  font-size: 0.65rem;
+  color: var(--ember);
+  font-style: italic;
+  margin-left: 0.3rem;
+}
+
 .pool-cell-role {
   font-size: 0.65rem;
   color: var(--muted);

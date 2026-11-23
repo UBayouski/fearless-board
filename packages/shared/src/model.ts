@@ -138,20 +138,26 @@ export function trainPickModel(examples: readonly PickExample[]): PickModel {
   // Initialise weights to zero
   let w = new Array(K).fill(0)
 
+  // Compute softmax probabilities for one example
+  function softmax(ex: { x: number[][] }, w: number[]): number[] {
+    const scores = ex.x.map((row) => {
+      let s = 0
+      for (let k = 0; k < K; k++) s += w[k] * row[k]
+      return s
+    })
+    const maxS = Math.max(...scores)
+    const exps = scores.map((s) => Math.exp(s - maxS))
+    const sumE = exps.reduce((a, b) => a + b, 0)
+    return exps.map((e) => e / sumE)
+  }
+
   // Compute log-likelihood
   function logLikelihood(w: number[]): number {
     let ll = 0
     let n = 0
     for (const ex of exStd) {
-      const scores = ex.x.map((row) => {
-        let s = 0
-        for (let k = 0; k < K; k++) s += w[k] * row[k]
-        return s
-      })
-      const maxS = Math.max(...scores)
-      const exps = scores.map((s) => Math.exp(s - maxS))
-      const sumE = exps.reduce((a, b) => a + b, 0)
-      ll += ex.actualIdx >= 0 ? Math.log(exps[ex.actualIdx] / sumE) : 0
+      const probs = softmax(ex, w)
+      ll += ex.actualIdx >= 0 ? Math.log(probs[ex.actualIdx]) : 0
       n++
     }
     return n > 0 ? ll / n : 0
@@ -174,15 +180,7 @@ export function trainPickModel(examples: readonly PickExample[]): PickModel {
 
     for (const ex of exStd) {
       // Softmax probabilities
-      const scores = ex.x.map((row) => {
-        let s = 0
-        for (let k = 0; k < K; k++) s += w[k] * row[k]
-        return s
-      })
-      const maxS = Math.max(...scores)
-      const exps = scores.map((s) => Math.exp(s - maxS))
-      const sumE = exps.reduce((a, b) => a + b, 0)
-      const probs = exps.map((e) => e / sumE)
+      const probs = softmax(ex, w)
 
       // Gradient: for each example, gradient of log p(actual) = x_actual - sum_j(p_j * x_j)
       for (let k = 0; k < K; k++) {
@@ -495,13 +493,16 @@ export function denialPicks(
 
 /**
  * The standard LoL draft order discovered from the data.
- * 1,477 of 1,734 games (85.2%) follow this exact sequence.
+ * Expressed as "1" (first team) and "2" (second team), not blue/red.
+ * 1,477 of 1,721 complete drafts follow this exact sequence.
+ * The first team is determined from the actual draft actions; in 2026,
+ * about half of games have the red side act first.
  */
 export const DRAFT_ORDER: DraftSlot[] = [
-  'B-b', 'R-b', 'B-b', 'R-b', 'B-b', 'R-b',  // Phase 1: 6 bans
-  'B-p', 'R-p', 'R-p', 'B-p', 'B-p', 'R-p',  // Phase 1: 6 picks
-  'R-b', 'B-b', 'R-b', 'B-b',                 // Phase 2: 4 bans
-  'R-p', 'B-p', 'B-p', 'R-p',                 // Phase 2: 4 picks
+  '1-b', '2-b', '1-b', '2-b', '1-b', '2-b',  // Phase 1: 6 bans
+  '1-p', '2-p', '2-p', '1-p', '1-p', '2-p',  // Phase 1: 6 picks
+  '2-b', '1-b', '2-b', '1-b',                 // Phase 2: 4 bans
+  '2-p', '1-p', '1-p', '2-p',                 // Phase 2: 4 picks
 ]
 
 /**
@@ -557,11 +558,12 @@ export function conditionLikelihoods(
 }
 
 /**
- * Get the team side for a given turn index in the draft order.
+ * Get the team for a given turn index in the draft order.
+ * Returns '1' for the first team, '2' for the second team.
  */
-export function draftSlotSide(turnIndex: number): 'B' | 'R' | null {
+export function draftSlotSide(turnIndex: number): '1' | '2' | null {
   if (turnIndex < 0 || turnIndex >= DRAFT_ORDER.length) return null
-  return DRAFT_ORDER[turnIndex][0] as 'B' | 'R'
+  return DRAFT_ORDER[turnIndex][0] as '1' | '2'
 }
 
 /**
@@ -617,11 +619,15 @@ export function gamePlan(
   const { lineup, lineupChanged } = lineupBefore(draft, gameNumber)
 
   // Build player data: use lineup players, not game N players
+  // Each team: [teamId, roleMap] where roleMap maps Role → GamePlanPlayer
+  // Players without a role go into a separate list
   const players: [string, Map<Role, GamePlanPlayer>][] = []
+  const unknownRolePlayers: [string, GamePlanPlayer[]][] = []
 
   for (const teamId of draft.teamIds) {
     const teamLineup = lineup[teamId] ?? []
     const roleMap = new Map<Role, GamePlanPlayer>()
+    const unknownRole: GamePlanPlayer[] = []
 
     for (const lp of teamLineup) {
       const role = playerRole.get(lp.playerId)
@@ -642,16 +648,23 @@ export function gamePlan(
         )
       }
 
-      roleMap.set(role ?? 'top', {
+      const gp = {
         playerId: lp.playerId,
         playerName: lp.playerName,
         role: role ?? null,
         pool: { credible, burned: burnedEntries },
         likelihoods,
-      })
+      }
+
+      if (role) {
+        roleMap.set(role, gp)
+      } else {
+        unknownRole.push(gp)
+      }
     }
 
     players.push([teamId, roleMap])
+    unknownRolePlayers.push([teamId, unknownRole])
   }
 
   // Build leverage for each team
@@ -661,31 +674,29 @@ export function gamePlan(
     const oppTeamId = draft.teamIds.find(t => t !== teamId)
     if (!oppTeamId) continue
 
-    const [ownPlayersData, oppPlayersData] = players
-      .map(([tid, roleMap]) => {
-        if (tid === teamId) return { teamId: tid, roleMap }
-        return null
-      })
-      .filter(Boolean) as { teamId: string; roleMap: Map<Role, GamePlanPlayer> }[]
+    // Look up both teams by ID
+    const ownPlayersData = players.find(([tid]) => tid === teamId)?.[1]
+    const oppPlayersData = players.find(([tid]) => tid === oppTeamId)?.[1]
+    if (!ownPlayersData || !oppPlayersData) continue
 
     // Collect players in role order
     const roleOrder: Role[] = ['top', 'jungle', 'mid', 'bot', 'support']
 
-    const ownPlayerLikelihoods = roleOrder.map(r => ownPlayersData.roleMap.get(r)?.likelihoods ?? [])
-    const oppPlayerLikelihoods = roleOrder.map(r => oppPlayersData.roleMap.get(r)?.likelihoods ?? [])
+    const ownPlayerLikelihoods = roleOrder.map(r => ownPlayersData.get(r)?.likelihoods ?? [])
+    const oppPlayerLikelihoods = roleOrder.map(r => oppPlayersData.get(r)?.likelihoods ?? [])
 
     const ownPlayers: PlayerRef[] = roleOrder.map(r => {
-      const gp = ownPlayersData.roleMap.get(r)
+      const gp = ownPlayersData.get(r)
       return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
     })
     const oppPlayers: PlayerRef[] = roleOrder.map(r => {
-      const gp = oppPlayersData.roleMap.get(r)
+      const gp = oppPlayersData.get(r)
       return { id: gp?.playerId ?? '', name: gp?.playerName ?? '', role: gp?.role ?? null }
     })
 
     // Build player pools for denial picks
     const ownPlayerPools = new Map<string, Map<string, number>>()
-    for (const [, gp] of ownPlayersData.roleMap) {
+    for (const [, gp] of ownPlayersData) {
       const champGames = new Map<string, number>()
       for (const entry of gp.pool.credible) {
         champGames.set(entry.championId, entry.games)
@@ -709,6 +720,7 @@ export function gamePlan(
     burnedByGame,
     availableChampions,
     players,
+    unknownRolePlayers,
     leverage,
     game,
   }

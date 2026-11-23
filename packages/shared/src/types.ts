@@ -277,10 +277,11 @@ export interface LeverageBacktestGroup {
 // ── Live draft types ─────────────────────────────────────────────────
 
 /**
- * One slot in the draft turn order. "B" = blue side, "R" = red side.
+ * One slot in the draft turn order. "1" = first team, "2" = second team.
  * "b" = ban, "p" = pick.
+ * The first team is determined from the actual draft data; it is not always the blue side.
  */
-export type DraftSlot = 'B-b' | 'R-b' | 'B-p' | 'R-p'
+export type DraftSlot = '1-b' | '2-b' | '1-p' | '2-p'
 
 /** One action entered during live draft. */
 export interface DraftActionInput {
@@ -324,11 +325,11 @@ export interface Lineup {
   [teamId: string]: LineupPlayer[]
 }
 
-/** Result of lineupBefore: lineup for each team plus whether lineup changed. */
+/** Result of lineupBefore: lineup for each team plus whether lineup changed per team. */
 export interface LineupResult {
   lineup: Lineup
-  /** True if any two earlier games had different players for a team. */
-  lineupChanged: boolean
+  /** True if a team's lineup differed between any two earlier games. Keyed by team ID. */
+  lineupChanged: Map<string, boolean>
 }
 
 // ── Game plan types ──────────────────────────────────────────────────
@@ -353,12 +354,15 @@ export interface GamePlanTeamLeverage {
 /** Complete game plan for one series and game number. */
 export interface GamePlan {
   lineup: Lineup
-  lineupChanged: boolean
+  /** Whether each team's lineup changed during earlier games. */
+  lineupChanged: Map<string, boolean>
   burned: Set<string>
   burnedByGame: Map<string, number>
   availableChampions: Set<string>
   /** Players keyed by team ID, then by role. */
   players: [string, Map<Role, GamePlanPlayer>][]
+  /** Players without a known role, keyed by team ID. */
+  unknownRolePlayers: [string, GamePlanPlayer[]][]
   /** Leverage data keyed by team ID. */
   leverage: Map<string, GamePlanTeamLeverage>
   game: GameDraft

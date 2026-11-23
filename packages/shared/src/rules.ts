@@ -2,7 +2,7 @@
 
 import type {
   GameDraft, PoolEntry, CompactPicks, PickRow, SeriesDraft,
-  LineupResult, Lineup, LineupPlayer,
+  LineupResult, Lineup,
 } from './types.ts'
 
 /** Decode a compact picks row back to PickRow format. */
@@ -136,7 +136,7 @@ export function burnedGameShare(pool: readonly PoolEntry[], burned: Set<string>)
  */
 export function lineupBefore(draft: SeriesDraft, gameNumber: number): LineupResult {
   const lineup: Lineup = {}
-  let lineupChanged = false
+  const lineupChanged = new Map<string, boolean>()
 
   // Determine which game provides the lineup
   const sourceGameNumber = gameNumber >= 2 ? gameNumber - 1 : 1
@@ -144,7 +144,10 @@ export function lineupBefore(draft: SeriesDraft, gameNumber: number): LineupResu
   if (!sourceGame) {
     // Fallback: use game 1
     const game1 = draft.games.find(g => g.gameNumber === 1)
-    if (!game1) return { lineup, lineupChanged: false }
+    if (!game1) {
+      for (const teamId of draft.teamIds) lineupChanged.set(teamId, false)
+      return { lineup, lineupChanged }
+    }
   }
 
   const effectiveGame = sourceGame ?? draft.games.find(g => g.gameNumber === 1)!
@@ -152,15 +155,14 @@ export function lineupBefore(draft: SeriesDraft, gameNumber: number): LineupResu
   // Build lineup from the effective game
   for (const teamId of draft.teamIds) {
     const teamPicks = effectiveGame.picks.filter(p => p.teamId === teamId)
-    const players: LineupPlayer[] = teamPicks.map(p => ({
+    lineup[teamId] = teamPicks.map(p => ({
       playerId: p.playerId,
       playerName: p.playerName,
       role: null, // role comes from manifest
     }))
-    lineup[teamId] = players
   }
 
-  // Check if lineup changed between any two earlier games
+  // Check if lineup changed between any two earlier games, per team
   const earlierGames = draft.games.filter(g => g.gameNumber < gameNumber)
   if (earlierGames.length >= 2) {
     for (const teamId of draft.teamIds) {
@@ -170,11 +172,10 @@ export function lineupBefore(draft: SeriesDraft, gameNumber: number): LineupResu
         playerSets.push(pids.join(','))
       }
       const unique = new Set(playerSets)
-      if (unique.size > 1) {
-        lineupChanged = true
-        break
-      }
+      lineupChanged.set(teamId, unique.size > 1)
     }
+  } else {
+    for (const teamId of draft.teamIds) lineupChanged.set(teamId, false)
   }
 
   return { lineup, lineupChanged }

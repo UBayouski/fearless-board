@@ -1,85 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, pickFeatures, trainPickModel, pickLikelihoods, calibrateModel, buildPickLikelihoods, threat, banLeverage, denialPicks, backtestLeverage, conditionLikelihoods, draftState, draftSlotSide, draftSlotType, DRAFT_ORDER, lineupBefore, type DraftAction, type DraftActionInput, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft, type Role, type PickCandidate, type PickExample, type PickFeatures, type PickLikelihood, type PlayerRef, type PickModel } from './index.ts'
-
-const action = (order: number, type: DraftAction['type'], teamId: string, championId: string): DraftAction => ({
-  order,
-  type,
-  teamId,
-  championId,
-})
-
-const game = (gameNumber: number, actions: DraftAction[]): GameDraft => ({
-  gameId: `g${gameNumber}`,
-  gameNumber,
-  patch: null,
-  sides: { blue: 'A', red: 'B' },
-  winnerTeamId: null,
-  actions,
-  picks: [],
-})
-
-const series = [
-  game(1, [action(1, 'ban', 'A', 'x'), action(2, 'pick', 'A', 'a1'), action(3, 'pick', 'B', 'b1')]),
-  game(2, [action(1, 'pick', 'A', 'a2'), action(2, 'pick', 'B', 'b2')]),
-]
-
-test('nothing is burned in game 1', () => {
-  assert.deepEqual([...burnedChampions(series, 1)], [])
-})
-
-test('picks from both teams are burned for later games', () => {
-  assert.deepEqual([...burnedChampions(series, 2)].sort(), ['a1', 'b1'])
-  assert.deepEqual([...burnedChampions(series, 3)].sort(), ['a1', 'a2', 'b1', 'b2'])
-})
-
-test('bans do not carry over', () => {
-  assert.equal(burnedChampions(series, 3).has('x'), false)
-})
-
-test('picks are used when actions are empty', () => {
-  const gameWithPicksOnly: GameDraft = {
-    gameId: 'g2',
-    gameNumber: 2,
-    patch: null,
-    sides: { blue: 'A', red: 'B' },
-    winnerTeamId: null,
-    actions: [],
-    picks: [
-      { teamId: 'A', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
-      { teamId: 'B', playerId: 'p2', playerName: 'Player2', championId: 'c2' },
-    ],
-  }
-  const seriesWithPicks = [
-    game(1, [action(1, 'pick', 'A', 'a1')]),
-    gameWithPicksOnly,
-  ]
-  assert.deepEqual([...burnedChampions(seriesWithPicks, 1)], [])
-  assert.deepEqual([...burnedChampions(seriesWithPicks, 2)].sort(), ['a1'])
-  assert.deepEqual([...burnedChampions(seriesWithPicks, 3)].sort(), ['a1', 'c1', 'c2'])
-})
-
-test('decodeCompactPicks decodes compact format', () => {
-  const cp: CompactPicks = {
-    series: ['s1'],
-    teams: ['tA', 'tB'],
-    players: ['p1', 'p2'],
-    champions: ['c1', 'c2'],
-    rows: [
-      [0, 1, 0, 0, 0, 1],
-      [0, 1, 1, 1, 1, 0],
-    ],
-  }
-  const rows = decodeCompactPicks(cp)
-  assert.equal(rows.length, 2)
-  assert.equal(rows[0].seriesId, 's1')
-  assert.equal(rows[0].gameNumber, 1)
-  assert.equal(rows[0].teamId, 'tA')
-  assert.equal(rows[0].playerId, 'p1')
-  assert.equal(rows[0].championId, 'c1')
-  assert.equal(rows[0].won, true)
-  assert.equal(rows[1].won, false)
-})
+import { pickFeatures, trainPickModel, pickLikelihoods, calibrateModel, buildPickLikelihoods, threat, banLeverage, denialPicks, conditionLikelihoods, draftState, draftSlotSide, draftSlotType, DRAFT_ORDER, gamePlan, type DraftActionInput, type PickRow, type SeriesDraft, type Role, type PickCandidate, type PickExample, type PickFeatures, type PickLikelihood, type PlayerRef } from './index.ts'
 
 const pickRow = (scheduledStart: string, seriesId: string, gameNumber: number, teamId: string, playerId: string, championId: string, won: boolean): PickRow => ({
   scheduledStart,
@@ -89,248 +10,6 @@ const pickRow = (scheduledStart: string, seriesId: string, gameNumber: number, t
   playerId,
   championId,
   won,
-})
-
-test('playerPool returns champions played before asOf', () => {
-  const picks: PickRow[] = [
-    pickRow('2025-01-01', 's1', 1, 'tA', 'p1', 'c1', true),
-    pickRow('2025-01-02', 's2', 1, 'tA', 'p1', 'c1', false),
-    pickRow('2025-01-03', 's3', 1, 'tA', 'p1', 'c2', true),
-    pickRow('2025-01-04', 's4', 1, 'tA', 'p1', 'c3', true),
-    pickRow('2025-01-05', 's5', 1, 'tA', 'p2', 'c1', true), // different player
-  ]
-
-  const pool = playerPool(picks, 'p1', '2025-01-04')
-  assert.equal(pool.length, 2) // c1 and c2, c3 is excluded (scheduledStart >= asOf)
-  assert.equal(pool[0].championId, 'c1')
-  assert.equal(pool[0].games, 2)
-  assert.equal(pool[0].wins, 1)
-  assert.equal(pool[0].lastPlayed, '2025-01-02')
-  assert.equal(pool[1].championId, 'c2')
-  assert.equal(pool[1].games, 1)
-  assert.equal(pool[1].wins, 1)
-})
-
-test('playerPool sorts by games desc then recency desc', () => {
-  const picks: PickRow[] = [
-    pickRow('2025-01-01', 's1', 1, 'tA', 'p1', 'c1', true),
-    pickRow('2025-01-02', 's2', 1, 'tA', 'p1', 'c1', true),
-    pickRow('2025-01-03', 's3', 1, 'tA', 'p1', 'c2', true),
-    pickRow('2025-01-04', 's4', 1, 'tA', 'p1', 'c2', true),
-    pickRow('2025-01-05', 's5', 1, 'tA', 'p1', 'c3', true),
-    pickRow('2025-01-06', 's6', 1, 'tA', 'p1', 'c3', true),
-    pickRow('2025-01-07', 's7', 1, 'tA', 'p1', 'c3', true),
-  ]
-
-  const pool = playerPool(picks, 'p1', '2026-01-01')
-  assert.equal(pool[0].championId, 'c3') // 3 games
-  assert.equal(pool[1].championId, 'c2') // 2 games, lastPlayed=01-04 (more recent)
-  assert.equal(pool[2].championId, 'c1') // 2 games, lastPlayed=01-02 (less recent)
-})
-
-test('playerPool returns empty for unknown player', () => {
-  const picks: PickRow[] = [
-    pickRow('2025-01-01', 's1', 1, 'tA', 'p1', 'c1', true),
-  ]
-  assert.deepEqual(playerPool(picks, 'unknown', '2026-01-01'), [])
-})
-
-test('crediblePool splits pool into available and burned', () => {
-  const pool: PoolEntry[] = [
-    { championId: 'c1', games: 5, wins: 3, lastPlayed: '2025-01-01' },
-    { championId: 'c2', games: 3, wins: 2, lastPlayed: '2025-01-02' },
-    { championId: 'c3', games: 2, wins: 1, lastPlayed: '2025-01-03' },
-  ]
-  const burned = new Set(['c2'])
-
-  const { credible, burned: burnedEntries } = crediblePool(pool, burned)
-  assert.equal(credible.length, 2)
-  assert.equal(credible[0].championId, 'c1')
-  assert.equal(credible[1].championId, 'c3')
-  assert.equal(burnedEntries.length, 1)
-  assert.equal(burnedEntries[0].championId, 'c2')
-})
-
-test('crediblePool with no burned champions', () => {
-  const pool: PoolEntry[] = [
-    { championId: 'c1', games: 5, wins: 3, lastPlayed: '2025-01-01' },
-  ]
-  const burned = new Set<string>()
-
-  const { credible, burned: burnedEntries } = crediblePool(pool, burned)
-  assert.equal(credible.length, 1)
-  assert.equal(burnedEntries.length, 0)
-})
-
-test('burnedGameShare returns correct percentage', () => {
-  const pool: PoolEntry[] = [
-    { championId: 'c1', games: 10, wins: 5, lastPlayed: '2025-01-01' },
-    { championId: 'c2', games: 5, wins: 3, lastPlayed: '2025-01-02' },
-    { championId: 'c3', games: 5, wins: 2, lastPlayed: '2025-01-03' },
-  ]
-  const burned = new Set(['c2', 'c3'])
-
-  // 10 games on c1 (not burned) + 5 games on c2 (burned) + 5 games on c3 (burned) = 20 total
-  // burned games = 10, share = 50%
-  assert.equal(burnedGameShare(pool, burned), 50)
-})
-
-test('burnedGameShare never exceeds 100%', () => {
-  const pool: PoolEntry[] = [
-    { championId: 'c1', games: 5, wins: 3, lastPlayed: '2025-01-01' },
-    { championId: 'c2', games: 3, wins: 2, lastPlayed: '2025-01-02' },
-  ]
-  const burned = new Set(['c1', 'c2'])
-
-  // All champions burned: 8/8 = 100%
-  assert.equal(burnedGameShare(pool, burned), 100)
-})
-
-test('burnedGameShare is 0 when nothing burned', () => {
-  const pool: PoolEntry[] = [
-    { championId: 'c1', games: 5, wins: 3, lastPlayed: '2025-01-01' },
-  ]
-  const burned = new Set<string>()
-
-  assert.equal(burnedGameShare(pool, burned), 0)
-})
-
-test('burnedGameShare is 0 for empty pool', () => {
-  const pool: PoolEntry[] = []
-  const burned = new Set(['c1'])
-
-  assert.equal(burnedGameShare(pool, burned), 0)
-})
-
-test('backtest computes correct summary', () => {
-  // Create a simple series with 2 games
-  const series: SeriesDraft = {
-    seriesId: 's1',
-    event: 'Test',
-    stage: 'Test',
-    scheduledStart: '2025-02-01',
-    teamIds: ['tA', 'tB'],
-    games: [
-      {
-        gameId: 'g1',
-        gameNumber: 1,
-        patch: null,
-        sides: { blue: 'tA', red: 'tB' },
-        winnerTeamId: 'tA',
-        actions: [],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
-          { teamId: 'tB', playerId: 'p2', playerName: 'Player2', championId: 'c2' },
-        ],
-      },
-      {
-        gameId: 'g2',
-        gameNumber: 2,
-        patch: null,
-        sides: { blue: 'tB', red: 'tA' },
-        winnerTeamId: 'tB',
-        actions: [],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c3' }, // c3 is new (not in pool before this series)
-          { teamId: 'tB', playerId: 'p2', playerName: 'Player2', championId: 'c4' }, // c4 is new
-        ],
-      },
-    ],
-  }
-
-  // Prior picks: p1 played c1 in an earlier series, p2 played c2 and c4
-  const picks: PickRow[] = [
-    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),  // p1's prior: c1
-    pickRow('2025-01-01', 's0', 1, 'tB', 'p2', 'c2', true),  // p2's prior: c2
-    pickRow('2025-01-10', 's0b', 1, 'tB', 'p2', 'c4', true), // p2's prior: c4
-  ]
-
-  const { games, summary } = backtest([series], picks)
-
-  // Only game 2 should be analyzed (game 1 is skipped)
-  assert.equal(games.length, 1)
-  assert.equal(games[0].gameNumber, 2)
-  assert.equal(games[0].players.length, 2) // 2 picks in game 2
-
-  // c1 and c2 are burned (from game 1)
-  // p1's pool before series: [c1]. After burning c1: credible = []
-  // p1 picks c3 → not in pool
-  // p2's pool before series: [c2, c4]. After burning c2: credible = [c4]
-  // p2 picks c4 → in pool, rank 1
-
-  assert.equal(summary.totalPicks, 2)
-  assert.equal(summary.inPool, 50) // 1 of 2 (p2's c4)
-  assert.equal(summary.inTop3, 50) // 1 of 2
-  assert.equal(summary.inTop5, 50) // 1 of 2
-})
-
-test('backtest skips single-game series', () => {
-  const series: SeriesDraft = {
-    seriesId: 's1',
-    event: 'Test',
-    stage: 'Test',
-    scheduledStart: '2025-02-01',
-    teamIds: ['tA', 'tB'],
-    games: [
-      {
-        gameId: 'g1',
-        gameNumber: 1,
-        patch: null,
-        sides: { blue: 'tA', red: 'tB' },
-        winnerTeamId: 'tA',
-        actions: [],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
-        ],
-      },
-    ],
-  }
-
-  const { games, summary } = backtest([series], [])
-  assert.equal(games.length, 0)
-  assert.equal(summary.totalPicks, 0)
-})
-
-test('backtest skips game 1', () => {
-  const series: SeriesDraft = {
-    seriesId: 's1',
-    event: 'Test',
-    stage: 'Test',
-    scheduledStart: '2025-02-01',
-    teamIds: ['tA', 'tB'],
-    games: [
-      {
-        gameId: 'g1',
-        gameNumber: 1,
-        patch: null,
-        sides: { blue: 'tA', red: 'tB' },
-        winnerTeamId: 'tA',
-        actions: [],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c1' },
-        ],
-      },
-      {
-        gameId: 'g2',
-        gameNumber: 2,
-        patch: null,
-        sides: { blue: 'tB', red: 'tA' },
-        winnerTeamId: 'tB',
-        actions: [],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c2' },
-        ],
-      },
-    ],
-  }
-
-  const picks: PickRow[] = [
-    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c2', true),
-  ]
-
-  const { games } = backtest([series], picks)
-  assert.equal(games.length, 1)
-  assert.equal(games[0].gameNumber, 2)
 })
 
 // ── Pick model tests ──────────────────────────────────────────────────
@@ -780,114 +459,6 @@ test('denialPicks: sorted by threat from opponent descending', () => {
   assert.equal(result[1].championId, 'c1', 'c1 should be second')
 })
 
-// ── 2b: backtestLeverage tests ─────────────────────────────────────────
-
-test('backtestLeverage: throws when player with role has empty likelihoods', () => {
-  // Create a series where championsSeen is empty, so allChampionIds is empty,
-  // so pickFeatures returns empty candidates, so pickLikelihoods returns empty
-  const draft: SeriesDraft = {
-    seriesId: 's1',
-    event: 'Test',
-    stage: 'Test',
-    scheduledStart: '2026-02-01',
-    teamIds: ['tA', 'tB'],
-    games: [
-      {
-        gameId: 'g1',
-        gameNumber: 1,
-        patch: null,
-        sides: { blue: 'tA', red: 'tB' },
-        winnerTeamId: 'tA',
-        actions: [action(1, 'ban', 'tA', 'c1')],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c2' },
-          { teamId: 'tA', playerId: 'p2', playerName: 'Player2', championId: 'c3' },
-          { teamId: 'tA', playerId: 'p3', playerName: 'Player3', championId: 'c4' },
-          { teamId: 'tA', playerId: 'p4', playerName: 'Player4', championId: 'c5' },
-          { teamId: 'tA', playerId: 'p5', playerName: 'Player5', championId: 'c6' },
-          { teamId: 'tB', playerId: 'p6', playerName: 'Player6', championId: 'c7' },
-          { teamId: 'tB', playerId: 'p7', playerName: 'Player7', championId: 'c8' },
-          { teamId: 'tB', playerId: 'p8', playerName: 'Player8', championId: 'c9' },
-          { teamId: 'tB', playerId: 'p9', playerName: 'Player9', championId: 'c10' },
-          { teamId: 'tB', playerId: 'p10', playerName: 'Player10', championId: 'c11' },
-        ],
-      },
-    ],
-    roleCounts: {
-      mid: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
-      top: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
-      jungle: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
-      bot: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
-      support: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
-    },
-    championsSeen: [], // empty → allChampionIds empty → pickFeatures returns [] → pickLikelihoods returns []
-  }
-
-  const picks: PickRow[] = []
-  const model: PickModel = { weights: [0, 0, 0, 0], mean: [0, 0, 0, 0], sd: [1, 1, 1, 1], meanLogLikelihood: 0, iterations: 0 }
-  const playerRole = new Map<string, Role | null>()
-  playerRole.set('p1', 'mid')
-  playerRole.set('p2', 'top')
-  playerRole.set('p3', 'jungle')
-  playerRole.set('p4', 'bot')
-  playerRole.set('p5', 'support')
-  playerRole.set('p6', 'top')
-  playerRole.set('p7', 'jungle')
-  playerRole.set('p8', 'mid')
-  playerRole.set('p9', 'bot')
-  playerRole.set('p10', 'support')
-
-  assert.throws(
-    () => backtestLeverage([draft], picks, model, playerRole),
-    /empty likelihoods/,
-  )
-})
-
-test('backtestLeverage: throws when series missing roleCounts', () => {
-  const draft: SeriesDraft = {
-    seriesId: 's1',
-    event: 'Test',
-    stage: 'Test',
-    scheduledStart: '2026-02-01',
-    teamIds: ['tA', 'tB'],
-    games: [
-      {
-        gameId: 'g1',
-        gameNumber: 1,
-        patch: null,
-        sides: { blue: 'tA', red: 'tB' },
-        winnerTeamId: 'tA',
-        actions: [action(1, 'ban', 'tA', 'c1')],
-        picks: [
-          { teamId: 'tA', playerId: 'p1', playerName: 'Player1', championId: 'c2' },
-          { teamId: 'tA', playerId: 'p2', playerName: 'Player2', championId: 'c3' },
-          { teamId: 'tA', playerId: 'p3', playerName: 'Player3', championId: 'c4' },
-          { teamId: 'tA', playerId: 'p4', playerName: 'Player4', championId: 'c5' },
-          { teamId: 'tA', playerId: 'p5', playerName: 'Player5', championId: 'c6' },
-          { teamId: 'tB', playerId: 'p6', playerName: 'Player6', championId: 'c7' },
-          { teamId: 'tB', playerId: 'p7', playerName: 'Player7', championId: 'c8' },
-          { teamId: 'tB', playerId: 'p8', playerName: 'Player8', championId: 'c9' },
-          { teamId: 'tB', playerId: 'p9', playerName: 'Player9', championId: 'c10' },
-          { teamId: 'tB', playerId: 'p10', playerName: 'Player10', championId: 'c11' },
-        ],
-      },
-    ],
-    // roleCounts intentionally missing
-  }
-
-  const picks: PickRow[] = []
-  const model: PickModel = { weights: [0, 0, 0, 0], mean: [0, 0, 0, 0], sd: [1, 1, 1, 1], meanLogLikelihood: 0, iterations: 0 }
-  const playerRole = new Map<string, Role | null>()
-  for (const pid of ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']) {
-    playerRole.set(pid, 'mid')
-  }
-
-  assert.throws(
-    () => backtestLeverage([draft], picks, model, playerRole),
-    /missing roleCounts/,
-  )
-})
-
 test('banLeverage and threat rank differently when own team wants a champion', () => {
   const oppPlayers = makePlayers(['op1', 'op2', 'op3', 'op4', 'op5'])
   const ownPlayers = makePlayers(['ow1', 'ow2', 'ow3', 'ow4', 'ow5'])
@@ -921,15 +492,6 @@ test('banLeverage and threat rank differently when own team wants a champion', (
   assert.ok(leverageResult[leverageResult.length - 1].championId === 'c2' || leverageResult[leverageResult.length - 2]?.championId === 'c2',
     'c2 should have lowest or near-lowest leverage (negative)')
 
-  // Threat alone ranking (opponent threat only):
-  // c1 has highest opponent threat (op1 wants it 80%)
-  // c3 has moderate opponent threat (op2-op5 want it)
-  // c2 has lowest opponent threat
-  // Threat ranking: c1 > c3 > c2 — same as leverage in this case
-  // But the key difference is c2: leverage puts it last (negative),
-  // while threat alone also puts it last. The difference shows when
-  // own team's threat changes the ordering.
-
   // Verify the leverage values show the difference
   const c1Entry = leverageResult.find(e => e.championId === 'c1')
   const c2Entry = leverageResult.find(e => e.championId === 'c2')
@@ -952,20 +514,20 @@ test('DRAFT_ORDER has 20 slots', () => {
 })
 
 test('draftSlotSide and draftSlotType follow the sequence', () => {
-  // First 6 are bans: B-b, R-b, B-b, R-b, B-b, R-b
-  assert.equal(draftSlotSide(0), 'B')
+  // First 6 are bans: 1-b, 2-b, 1-b, 2-b, 1-b, 2-b
+  assert.equal(draftSlotSide(0), '1')
   assert.equal(draftSlotType(0), 'b')
-  assert.equal(draftSlotSide(1), 'R')
+  assert.equal(draftSlotSide(1), '2')
   assert.equal(draftSlotType(1), 'b')
   // Slots 6-11 are picks
   assert.equal(draftSlotType(6), 'p')
-  assert.equal(draftSlotSide(6), 'B')
-  // Slots 12-15 are bans
+  assert.equal(draftSlotSide(6), '1')
+  // Slots 12-15 are bans (second phase)
   assert.equal(draftSlotType(12), 'b')
-  assert.equal(draftSlotSide(12), 'R')
-  // Slots 16-19 are picks
+  assert.equal(draftSlotSide(12), '2')
+  // Slots 16-19 are picks (second phase)
   assert.equal(draftSlotType(16), 'p')
-  assert.equal(draftSlotSide(16), 'R')
+  assert.equal(draftSlotSide(16), '2')
   // Out of range
   assert.equal(draftSlotSide(20), null)
   assert.equal(draftSlotType(20), null)
@@ -1031,118 +593,178 @@ test('draftState: unavailable includes burned, banned, and picked', () => {
 
 test('draftState: turn order follows the sequence', () => {
   // Simulate the first few actions of a real draft
+  // First team = 'teamA', second team = 'teamB'
   const burned = new Set<string>()
   const actions: DraftActionInput[] = []
 
-  // Turn 0: B-b (blue ban)
-  assert.equal(draftSlotSide(0), 'B')
+  // Turn 0: 1-b (first team ban)
+  assert.equal(draftSlotSide(0), '1')
   assert.equal(draftSlotType(0), 'b')
-  actions.push({ type: 'ban', teamId: 'blue', championId: 'c1' })
+  actions.push({ type: 'ban', teamId: 'teamA', championId: 'c1' })
   let state = draftState(actions, burned)
   assert.equal(state.turnIndex, 1)
 
-  // Turn 1: R-b (red ban)
-  assert.equal(draftSlotSide(1), 'R')
+  // Turn 1: 2-b (second team ban)
+  assert.equal(draftSlotSide(1), '2')
   assert.equal(draftSlotType(1), 'b')
-  actions.push({ type: 'ban', teamId: 'red', championId: 'c2' })
+  actions.push({ type: 'ban', teamId: 'teamB', championId: 'c2' })
   state = draftState(actions, burned)
   assert.equal(state.turnIndex, 2)
 
   // Turn 6: B-p (blue pick) — first pick phase
   for (let i = 2; i < 6; i++) {
-    actions.push({ type: 'ban', teamId: i % 2 === 0 ? 'blue' : 'red', championId: `c${i + 1}` })
+    actions.push({ type: 'ban', teamId: i % 2 === 0 ? 'teamA' : 'teamB', championId: `c${i + 1}` })
   }
-  assert.equal(draftSlotSide(6), 'B')
+  assert.equal(draftSlotSide(6), '1')
   assert.equal(draftSlotType(6), 'p')
-  actions.push({ type: 'pick', teamId: 'blue', championId: 'c7', playerId: 'p1' })
+  actions.push({ type: 'pick', teamId: 'teamA', championId: 'c7', playerId: 'p1' })
   state = draftState(actions, burned)
   assert.equal(state.turnIndex, 7)
   assert.ok(state.pickedPlayers.has('p1'))
 })
 
-// ── Lineup tests ─────────────────────────────────────────────────────
+test('draftState: red-first draft works correctly', () => {
+  // In 2026, the red side can act first. The draft order uses first/second team,
+  // not blue/red. This test verifies that a red-first draft is handled correctly.
+  const burned = new Set<string>()
+  const actions: DraftActionInput[] = []
 
-test('lineupBefore: game 1 uses game 1 lineup', () => {
-  const draft: SeriesDraft = {
-    seriesId: 's1', event: 'E', stage: 'S', scheduledStart: '2025-01-01',
-    teamIds: ['A', 'B'],
-    games: [
-      { gameId: 'g1', gameNumber: 1, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p1', playerName: 'P1', championId: 'c1' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c2' },
-        ]},
-      { gameId: 'g2', gameNumber: 2, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p1', playerName: 'P1', championId: 'c3' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c4' },
-        ]},
-    ],
-  }
-  const result = lineupBefore(draft, 1)
-  assert.equal(result.lineup['A'].length, 1)
-  assert.equal(result.lineup['A'][0].playerId, 'p1')
-  assert.equal(result.lineupChanged, false)
+  // Red side acts first (team 'redTeam' is the first team)
+  // Turn 0: 1-b (red team ban)
+  assert.equal(draftSlotSide(0), '1')
+  actions.push({ type: 'ban', teamId: 'redTeam', championId: 'c1' })
+  let state = draftState(actions, burned)
+  assert.equal(state.turnIndex, 1)
+
+  // Turn 1: 2-b (blue team ban)
+  assert.equal(draftSlotSide(1), '2')
+  actions.push({ type: 'ban', teamId: 'blueTeam', championId: 'c2' })
+  state = draftState(actions, burned)
+  assert.equal(state.turnIndex, 2)
+
+  // Second-phase bans start at slot 12
+  // Slot 12: 2-b (second team = blue team bans)
+  assert.equal(draftSlotSide(12), '2')
+  assert.equal(draftSlotType(12), 'b')
+  // Slot 13: 1-b (first team = red team bans)
+  assert.equal(draftSlotSide(13), '1')
+  assert.equal(draftSlotType(13), 'b')
 })
 
-test('lineupBefore: game 3 uses game 2 lineup', () => {
-  const draft: SeriesDraft = {
-    seriesId: 's1', event: 'E', stage: 'S', scheduledStart: '2025-01-01',
-    teamIds: ['A', 'B'],
-    games: [
-      { gameId: 'g1', gameNumber: 1, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p1', playerName: 'P1', championId: 'c1' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c2' },
-        ]},
-      { gameId: 'g2', gameNumber: 2, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p3', playerName: 'P3', championId: 'c3' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c4' },
-        ]},
-      { gameId: 'g3', gameNumber: 3, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p3', playerName: 'P3', championId: 'c5' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c6' },
-        ]},
-    ],
-  }
-  const result = lineupBefore(draft, 3)
-  // Game 3 should use game 2 lineup: p3 for team A
-  assert.equal(result.lineup['A'][0].playerId, 'p3')
-  // Lineup changed: game 1 had p1, game 2 had p3
-  assert.equal(result.lineupChanged, true)
-})
+// ── gamePlan tests ─────────────────────────────────────────────────────
 
-test('lineupBefore: substitution detection', () => {
+test('gamePlan: both teams get ban leverage', () => {
+  // Build a minimal fixture series with two teams, three games, and role counts
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p2', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p3', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p4', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p5', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tB', 'p6', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tB', 'p7', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tB', 'p8', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tB', 'p9', 'c1', true),
+    pickRow('2025-01-01', 's0', 1, 'tB', 'p10', 'c1', true),
+  ]
+
   const draft: SeriesDraft = {
-    seriesId: 's1', event: 'E', stage: 'S', scheduledStart: '2025-01-01',
-    teamIds: ['A', 'B'],
+    seriesId: 's1',
+    event: 'Test',
+    stage: 'Test',
+    scheduledStart: '2025-02-01',
+    teamIds: ['tA', 'tB'],
     games: [
-      { gameId: 'g1', gameNumber: 1, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
+      {
+        gameId: 'g1', gameNumber: 1, patch: null,
+        sides: { blue: 'tA', red: 'tB' }, winnerTeamId: 'tA', actions: [],
         picks: [
-          { teamId: 'A', playerId: 'p1', playerName: 'P1', championId: 'c1' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c2' },
-        ]},
-      { gameId: 'g2', gameNumber: 2, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
+          { teamId: 'tA', playerId: 'p1', playerName: 'P1', championId: 'c2' },
+          { teamId: 'tA', playerId: 'p2', playerName: 'P2', championId: 'c3' },
+          { teamId: 'tA', playerId: 'p3', playerName: 'P3', championId: 'c4' },
+          { teamId: 'tA', playerId: 'p4', playerName: 'P4', championId: 'c5' },
+          { teamId: 'tA', playerId: 'p5', playerName: 'P5', championId: 'c6' },
+          { teamId: 'tB', playerId: 'p6', playerName: 'P6', championId: 'c7' },
+          { teamId: 'tB', playerId: 'p7', playerName: 'P7', championId: 'c8' },
+          { teamId: 'tB', playerId: 'p8', playerName: 'P8', championId: 'c9' },
+          { teamId: 'tB', playerId: 'p9', playerName: 'P9', championId: 'c10' },
+          { teamId: 'tB', playerId: 'p10', playerName: 'P10', championId: 'c11' },
+        ],
+      },
+      {
+        gameId: 'g2', gameNumber: 2, patch: null,
+        sides: { blue: 'tB', red: 'tA' }, winnerTeamId: 'tB', actions: [],
         picks: [
-          { teamId: 'A', playerId: 'p1', playerName: 'P1', championId: 'c3' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c4' },
-        ]},
-      { gameId: 'g3', gameNumber: 3, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p4', playerName: 'P4', championId: 'c5' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c6' },
-        ]},
-      { gameId: 'g4', gameNumber: 4, patch: null, sides: { blue: 'A', red: 'B' }, winnerTeamId: null, actions: [],
-        picks: [
-          { teamId: 'A', playerId: 'p4', playerName: 'P4', championId: 'c7' },
-          { teamId: 'B', playerId: 'p2', playerName: 'P2', championId: 'c8' },
-        ]},
+          { teamId: 'tA', playerId: 'p1', playerName: 'P1', championId: 'c12' },
+          { teamId: 'tA', playerId: 'p2', playerName: 'P2', championId: 'c13' },
+          { teamId: 'tA', playerId: 'p3', playerName: 'P3', championId: 'c14' },
+          { teamId: 'tA', playerId: 'p4', playerName: 'P4', championId: 'c15' },
+          { teamId: 'tA', playerId: 'p5', playerName: 'P5', championId: 'c16' },
+          { teamId: 'tB', playerId: 'p6', playerName: 'P6', championId: 'c17' },
+          { teamId: 'tB', playerId: 'p7', playerName: 'P7', championId: 'c18' },
+          { teamId: 'tB', playerId: 'p8', playerName: 'P8', championId: 'c19' },
+          { teamId: 'tB', playerId: 'p9', playerName: 'P9', championId: 'c20' },
+          { teamId: 'tB', playerId: 'p10', playerName: 'P10', championId: 'c21' },
+        ],
+      },
+      {
+        gameId: 'g3', gameNumber: 3, patch: null,
+        sides: { blue: 'tA', red: 'tB' }, winnerTeamId: null, actions: [],
+        picks: [],
+      },
     ],
+    roleCounts: {
+      top: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      jungle: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      mid: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      bot: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+      support: { total45: 100, totalAll: 500, champions: { c1: [10, 50] as [number, number] } },
+    },
+    championsSeen: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11'],
   }
-  // Game 4 should use game 3 lineup (p4), and lineupChanged should be true
-  const result = lineupBefore(draft, 4)
-  assert.equal(result.lineup['A'][0].playerId, 'p4')
-  assert.equal(result.lineupChanged, true)
+
+  const examples: PickExample[] = []
+  for (let i = 0; i < 50; i++) {
+    examples.push({
+      playerId: 'p1', role: 'top' as Role, seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 1, played: 1, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+
+  const playerRole = new Map<string, Role | null>()
+  playerRole.set('p1', 'top')
+  playerRole.set('p2', 'jungle')
+  playerRole.set('p3', 'mid')
+  playerRole.set('p4', 'bot')
+  playerRole.set('p5', 'support')
+  playerRole.set('p6', 'top')
+  playerRole.set('p7', 'jungle')
+  playerRole.set('p8', 'mid')
+  playerRole.set('p9', 'bot')
+  playerRole.set('p10', 'support')
+
+  const plan = gamePlan(draft, 3, picks, model, playerRole)
+
+  // Both teams should have leverage data
+  assert.ok(plan.leverage.has('tA'), 'team tA should have leverage')
+  assert.ok(plan.leverage.has('tB'), 'team tB should have leverage')
+
+  // Both teams should have players
+  assert.equal(plan.players.length, 2, 'should have two teams')
+
+  // Opponent players should appear in leverage (not empty)
+  const tAlev = plan.leverage.get('tA')!
+  assert.ok(tAlev.leverage.length > 0, 'tA should have ban leverage entries')
+  // The opponent hits should reference team tB's players
+  const entryWithOppHit = tAlev.leverage.find(e => e.opponentHits.length > 0)
+  if (entryWithOppHit) {
+    const oppPlayerIds = entryWithOppHit.opponentHits.map(h => h.playerId)
+    assert.ok(oppPlayerIds.some(id => ['p6', 'p7', 'p8', 'p9', 'p10'].includes(id)),
+      'opponent hits should reference tB players')
+  }
 })

@@ -6,7 +6,22 @@ import type {
   LeverageBacktestGroup, LiveDraftGroup, GameDraft, PlayerRef, PlayerPick,
 } from './types.ts'
 import { burnedChampions, playerPool, crediblePool } from './rules.ts'
-import { pickFeatures, pickLikelihoods, threat, banLeverage, conditionLikelihoods } from './model.ts'
+import { pickFeatures, pickLikelihoods, threat, banLeverage, conditionLikelihoods, draftSlotType } from './model.ts'
+
+/**
+ * Convert roleCounts champions map to two separate maps for pickFeatures.
+ */
+function buildRolePickMaps(
+  rc: { champions: Record<string, [number, number]> },
+): { rolePicks45: Map<string, number>; rolePicksAll: Map<string, number> } {
+  const rolePicks45 = new Map<string, number>()
+  const rolePicksAll = new Map<string, number>()
+  for (const [champId, counts] of Object.entries(rc.champions)) {
+    rolePicks45.set(champId, counts[0])
+    rolePicksAll.set(champId, counts[1])
+  }
+  return { rolePicks45, rolePicksAll }
+}
 
 /**
  * Evaluate the "games played" ranking (the board's ranking) on a set of examples.
@@ -92,7 +107,7 @@ export function calibrateModel(
     { label: '20%+', low: 20, high: Infinity },
   ]
 
-  const result: CalibrationBin[] = bins.map((bin) => {
+  return bins.map((bin) => {
     const inBin = pairs.filter((p) => p.prob >= bin.low && p.prob < bin.high)
     const count = inBin.length
     const meanPredicted = count > 0 ? inBin.reduce((s, p) => s + p.prob, 0) / count : 0
@@ -104,8 +119,6 @@ export function calibrateModel(
       actualPickRate: Math.round(actualPickRate * 10) / 10,
     }
   })
-
-  return result
 }
 
 /**
@@ -190,12 +203,7 @@ export function backtestLeverage(
         continue
       }
 
-      const rolePicks45 = new Map<string, number>()
-      const rolePicksAll = new Map<string, number>()
-      for (const [champId, counts] of Object.entries(rc.champions)) {
-        rolePicks45.set(champId, counts[0])
-        rolePicksAll.set(champId, counts[1])
-      }
+      const { rolePicks45, rolePicksAll } = buildRolePickMaps(rc)
 
       const candidates = pickFeatures(
         pick.playerId,
@@ -351,6 +359,9 @@ export function backtestLeverage(
 
 /**
  * Backtest live draft conditioning.
+ *
+ * Returns pick backtest results and second-phase ban backtest results.
+ * The first team is determined from the actual draft actions (not hard-coded to blue).
  */
 export function backtestLiveDraft(
   seriesList: readonly SeriesDraft[],
@@ -360,6 +371,13 @@ export function backtestLiveDraft(
 ): {
   all: LiveDraftGroup
   byPickPosition: { name: string; conditioned: { top1: number; top3: number; top5: number; picks: number }; unconditioned: { top1: number; top3: number; top5: number } }[]
+  /** Second-phase ban backtest: share of bans in top 5/8 by ban leverage. */
+  secondPhaseBans: {
+    all: { bans: number; leverageTop5: number; leverageTop8: number; unconditionedTop5: number; unconditionedTop8: number }
+    games2Plus: { bans: number; leverageTop5: number; leverageTop8: number; unconditionedTop5: number; unconditionedTop8: number }
+  }
+  /** Share of red-first games per league and year. */
+  redFirstShare: { league: string; year: string; totalGames: number; redFirstGames: number; share: number }[]
 } {
   interface PickCheck {
     series: SeriesDraft
@@ -367,19 +385,52 @@ export function backtestLiveDraft(
     pick: PlayerPick
     playerLikelihoods: PickLikelihood[]
     pickPosition: number
+    firstTeamId: string
+  }
+
+  interface SecondPhaseBanCheck {
+    series: SeriesDraft
+    game: GameDraft
+    gameNumber: number
+    banningTeamId: string
+    bannedChampionId: string
+    actionsBeforeBan: { type: 'ban' | 'pick'; teamId: string; championId: string; playerId?: string }[]
+    firstTeamId: string
   }
 
   const allPickChecks: PickCheck[] = []
+  const allSecondPhaseBanChecks: SecondPhaseBanCheck[] = []
+
+  // Track red-first games per league/year
+  const redFirstStats = new Map<string, { total: number; redFirst: number }>()
 
   for (const draft of seriesList) {
     if (!draft.roleCounts || !draft.championsSeen) continue
 
     for (const game of draft.games) {
-      if (game.actions.length === 0) continue
+      if (game.actions.length < 10) continue
 
       const burned = burnedChampions(draft.games, game.gameNumber)
       const allChampionIds = new Set(draft.championsSeen)
 
+      // Determine first team from actual draft actions
+      const firstAction = game.actions[0]
+      const firstTeamId = firstAction.teamId
+      const secondTeamId = draft.teamIds.find(t => t !== firstTeamId)
+      if (!secondTeamId) continue
+
+      // Track red-first: the first team is the red side
+      const redSideTeamId = game.sides.red
+      const isRedFirst = firstTeamId === redSideTeamId
+      const league = draft.event
+      const year = draft.scheduledStart.substring(0, 4)
+      const key = `${league}|${year}`
+      const stats = redFirstStats.get(key) ?? { total: 0, redFirst: 0 }
+      stats.total++
+      if (isRedFirst) stats.redFirst++
+      redFirstStats.set(key, stats)
+
+      // Build unconditioned likelihoods for each player
       const playerLikelihoods = new Map<string, PickLikelihood[]>()
       for (const pick of game.picks) {
         const role = playerRole.get(pick.playerId)
@@ -394,12 +445,7 @@ export function backtestLiveDraft(
           continue
         }
 
-        const rolePicks45 = new Map<string, number>()
-        const rolePicksAll = new Map<string, number>()
-        for (const [champId, counts] of Object.entries(rc.champions)) {
-          rolePicks45.set(champId, counts[0])
-          rolePicksAll.set(champId, counts[1])
-        }
+        const { rolePicks45, rolePicksAll } = buildRolePickMaps(rc)
 
         const candidates = pickFeatures(
           pick.playerId,
@@ -422,27 +468,53 @@ export function backtestLiveDraft(
         champToPlayer.set(pick.championId, pick.playerId)
       }
 
-      const unavailable = new Set(burned)
-      const pickedPlayers = new Set<string>()
-
       const playerToPick = new Map<string, typeof game.picks[0]>()
       for (const pick of game.picks) {
         playerToPick.set(pick.playerId, pick)
       }
 
-      for (const action of game.actions) {
+      // Replay draft actions in order, using DRAFT_ORDER with first/second team
+      const condUnavailable = new Set(burned)
+      const condPickedPlayers = new Set<string>()
+
+      // Second-phase bans are slots 12-15 (indices)
+      const secondPhaseBanSlots = new Set<number>()
+      for (let i = 12; i <= 15; i++) {
+        if (draftSlotType(i) === 'b') secondPhaseBanSlots.add(i)
+      }
+
+      for (let actionIdx = 0; actionIdx < game.actions.length; actionIdx++) {
+        const action = game.actions[actionIdx]
+
+        // Check if this action is a second-phase ban
+        if (action.type === 'ban' && secondPhaseBanSlots.has(actionIdx)) {
+          allSecondPhaseBanChecks.push({
+            series: draft,
+            game,
+            gameNumber: game.gameNumber,
+            banningTeamId: action.teamId,
+            bannedChampionId: action.championId,
+            actionsBeforeBan: game.actions.slice(0, actionIdx).map(a => ({
+              type: a.type,
+              teamId: a.teamId,
+              championId: a.championId,
+            })),
+            firstTeamId,
+          })
+        }
+
         if (action.type === 'ban') {
-          unavailable.add(action.championId)
+          condUnavailable.add(action.championId)
         } else if (action.type === 'pick') {
           const playerId = champToPlayer.get(action.championId)
           if (!playerId) {
-            unavailable.add(action.championId)
+            condUnavailable.add(action.championId)
             continue
           }
 
           const pickRow = playerToPick.get(playerId)
           if (!pickRow) {
-            unavailable.add(action.championId)
+            condUnavailable.add(action.championId)
             continue
           }
 
@@ -458,14 +530,17 @@ export function backtestLiveDraft(
             pick: pickRow,
             playerLikelihoods: uncondLikelihoods,
             pickPosition: pos,
+            firstTeamId,
           })
 
-          pickedPlayers.add(playerId)
-          unavailable.add(action.championId)
+          condPickedPlayers.add(playerId)
+          condUnavailable.add(action.championId)
         }
       }
     }
   }
+
+  // ── Pick backtest ──────────────────────────────────────────────
 
   interface LiveDraftRow {
     conditionedRank: number
@@ -566,7 +641,160 @@ export function backtestLiveDraft(
     })
   }
 
-  return { all, byPickPosition }
+  // ── Second-phase ban backtest ──────────────────────────────────
+
+  function evaluateSecondPhaseBans(bans: SecondPhaseBanCheck[]) {
+    let leverageTop5 = 0, leverageTop8 = 0
+    let unconditionedTop5 = 0, unconditionedTop8 = 0
+
+    const cache = new Map<string, {
+      likelihoodsByPlayer: Map<string, PickLikelihood[]>
+      available: Set<string>
+      teamPlayers: Map<string, { playerLikelihoods: PickLikelihood[][]; players: PlayerRef[] }>
+    }>()
+
+    for (const ban of bans) {
+      const key = `${ban.series.seriesId}:${ban.game.gameNumber}`
+      let cached = cache.get(key)
+      if (!cached) {
+        const game = ban.game
+        const burned = burnedChampions(ban.series.games, game.gameNumber)
+        const allChampionIds = new Set(ban.series.championsSeen!)
+        const available = new Set<string>()
+        for (const c of allChampionIds) {
+          if (!burned.has(c)) available.add(c)
+        }
+
+        const likelihoodsByPlayer = new Map<string, PickLikelihood[]>()
+        const teamPlayers = new Map<string, { playerLikelihoods: PickLikelihood[][]; players: PlayerRef[] }>()
+
+        for (const pick of game.picks) {
+          const role = playerRole.get(pick.playerId)
+          if (!role) {
+            likelihoodsByPlayer.set(pick.playerId, [])
+            continue
+          }
+          const rc = ban.series.roleCounts?.[role]
+          if (!rc) {
+            likelihoodsByPlayer.set(pick.playerId, [])
+            continue
+          }
+          const { rolePicks45, rolePicksAll } = buildRolePickMaps(rc)
+          const candidates = pickFeatures(
+            pick.playerId, ban.series.scheduledStart, picks, burned,
+            rolePicks45, rolePicksAll, rc.total45, rc.totalAll, allChampionIds,
+          )
+          const likelihoods = pickLikelihoods(model, candidates)
+          likelihoodsByPlayer.set(pick.playerId, likelihoods)
+
+          const list = teamPlayers.get(pick.teamId)
+          if (!list) {
+            teamPlayers.set(pick.teamId, { playerLikelihoods: [], players: [] })
+          }
+          const t = teamPlayers.get(pick.teamId)!
+          t.playerLikelihoods.push(likelihoods)
+          t.players.push({ id: pick.playerId, name: pick.playerName, role })
+        }
+
+        cached = { likelihoodsByPlayer, available, teamPlayers }
+        cache.set(key, cached)
+      }
+
+      const banningTeamId = ban.banningTeamId
+      const oppTeamId = ban.series.teamIds.find(t => t !== banningTeamId)
+      if (!oppTeamId) continue
+
+      const ownTeam = cached.teamPlayers.get(banningTeamId)
+      const oppTeam = cached.teamPlayers.get(oppTeamId)
+      if (!ownTeam || !oppTeam) continue
+
+      // Build conditioned likelihoods: apply all actions before this ban
+      const condUnavailable = new Set(burnedChampions(ban.series.games, ban.game.gameNumber))
+      const condPickedPlayers = new Set<string>()
+      const champToPlayer = new Map<string, string>()
+      for (const p of ban.game.picks) champToPlayer.set(p.championId, p.playerId)
+
+      for (const a of ban.actionsBeforeBan) {
+        condUnavailable.add(a.championId)
+        if (a.type === 'pick' && a.playerId) {
+          condPickedPlayers.add(a.playerId)
+        }
+      }
+
+      // Condition each player's likelihoods
+      const ownCondLikelihoods = ownTeam.players.map((player, i) => {
+        if (condPickedPlayers.has(player.id)) return []
+        return conditionLikelihoods(ownTeam.playerLikelihoods[i], condUnavailable, player.id, condPickedPlayers)
+      })
+      const oppCondLikelihoods = oppTeam.players.map((player, i) => {
+        if (condPickedPlayers.has(player.id)) return []
+        return conditionLikelihoods(oppTeam.playerLikelihoods[i], condUnavailable, player.id, condPickedPlayers)
+      })
+
+      // Conditioned ban leverage
+      const condAvailable = new Set<string>()
+      for (const c of cached.available) {
+        if (!condUnavailable.has(c)) condAvailable.add(c)
+      }
+
+      const leverageList = banLeverage(
+        oppCondLikelihoods, ownCondLikelihoods, oppTeam.players, ownTeam.players, condAvailable,
+      )
+      const leverageRankMap = new Map<string, number>()
+      leverageList.forEach((e, i) => leverageRankMap.set(e.championId, i + 1))
+
+      // Unconditioned ban leverage (before draft)
+      const uncondLeverageList = banLeverage(
+        oppTeam.playerLikelihoods, ownTeam.playerLikelihoods, oppTeam.players, ownTeam.players, cached.available,
+      )
+      const uncondLeverageRankMap = new Map<string, number>()
+      uncondLeverageList.forEach((e, i) => uncondLeverageRankMap.set(e.championId, i + 1))
+
+      const bannedChampionId = ban.bannedChampionId
+      const levRank = leverageRankMap.get(bannedChampionId) ?? 0
+      if (levRank >= 1 && levRank <= 5) leverageTop5++
+      if (levRank >= 1 && levRank <= 8) leverageTop8++
+
+      const uncondRank = uncondLeverageRankMap.get(bannedChampionId) ?? 0
+      if (uncondRank >= 1 && uncondRank <= 5) unconditionedTop5++
+      if (uncondRank >= 1 && uncondRank <= 8) unconditionedTop8++
+    }
+
+    const n = bans.length
+    const pct = (v: number) => n > 0 ? Math.round(v / n * 1000) / 10 : 0
+    return {
+      bans: n,
+      leverageTop5: pct(leverageTop5),
+      leverageTop8: pct(leverageTop8),
+      unconditionedTop5: pct(unconditionedTop5),
+      unconditionedTop8: pct(unconditionedTop8),
+    }
+  }
+
+  const allSecondPhaseBans = evaluateSecondPhaseBans(allSecondPhaseBanChecks)
+  const games2PlusBans = evaluateSecondPhaseBans(allSecondPhaseBanChecks.filter(b => b.gameNumber >= 2))
+
+  const secondPhaseBans = {
+    all: { ...allSecondPhaseBans },
+    games2Plus: { ...games2PlusBans },
+  }
+
+  // ── Red-first share per league/year ────────────────────────────
+
+  const redFirstShare: { league: string; year: string; totalGames: number; redFirstGames: number; share: number }[] = []
+  for (const [key, stats] of redFirstStats) {
+    const [league, year] = key.split('|')
+    redFirstShare.push({
+      league,
+      year,
+      totalGames: stats.total,
+      redFirstGames: stats.redFirst,
+      share: stats.total > 0 ? Math.round(stats.redFirst / stats.total * 1000) / 10 : 0,
+    })
+  }
+  redFirstShare.sort((a, b) => a.league.localeCompare(b.league) || a.year.localeCompare(b.year))
+
+  return { all, byPickPosition, secondPhaseBans, redFirstShare }
 }
 
 /**

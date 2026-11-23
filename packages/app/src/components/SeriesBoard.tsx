@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ChampionRef, PickModel, PickRow, PlayerRef, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import type { ChampionRef, PickModel, PickRow, PlayerRef, Role, SeriesDraft, TeamRef } from '@fearless-board/shared'
+import { gamePlan as computeGamePlan } from '@fearless-board/shared'
 import { BurnedStrip } from './BurnedStrip'
 import { CompactHistoryCard } from './CompactHistoryCard'
 import { GameColumn } from './GameColumn'
@@ -47,6 +48,16 @@ export function SeriesBoard({
       if (r.ok) setModel(await r.json())
     }).catch(() => {})
   }, [])
+
+  // Compute gamePlan once (memoised on series, game number, and model)
+  const plan = useMemo(() => {
+    if (!model) return undefined
+    const playerRole = new Map<string, Role | null>()
+    for (const [id, p] of playerMap) {
+      playerRole.set(id, p.role)
+    }
+    return computeGamePlan(draft, gameNumber, picks, model, playerRole)
+  }, [draft, gameNumber, picks, model, playerMap])
 
   const t0 = teamMap.get(draft.teamIds[0])
   const t1 = teamMap.get(draft.teamIds[1])
@@ -180,29 +191,24 @@ export function SeriesBoard({
       })()}
 
       {/* ── Pool matrix (first, within 300px) ─────────────── */}
-      {gameNumber && (
+      {gameNumber && plan && (
         <PoolMatrix
+          plan={plan}
           draft={draft}
-          picks={picks}
           teamMap={teamMap}
           championMap={championMap}
-          playerMap={playerMap}
           gameNumber={gameNumber}
-          model={model}
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
         />
       )}
 
       {/* ── Leverage panel (after matrix) ──────────────────── */}
-      {gameNumber && model && (
+      {gameNumber && plan && (
         <LeveragePanel
+          plan={plan}
           draft={draft}
-          picks={picks}
           teamMap={teamMap}
           championMap={championMap}
-          playerMap={playerMap}
-          gameNumber={gameNumber}
-          model={model}
           revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
         />
       )}
