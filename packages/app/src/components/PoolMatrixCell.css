@@ -213,22 +213,6 @@
   color: var(--new) !important;
 }
 
-/* 5: Result banner above the matrix */
-.reveal-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 1rem;
-  background: rgba(61, 220, 151, 0.08);
-  border: 1px solid var(--hit);
-  border-radius: 4px;
-  color: var(--hit);
-  text-align: center;
-}
-
 /* 5: 200ms highlight transition */
 .champ-tile-btn {
   transition: border-color 0.2s, color 0.2s, background 0.2s;

@@ -111,7 +111,7 @@ export function DraftBar({
     <div className="draft-bar" ref={barRef}>
       {/* One line: whose turn, ban search, undo and reset, first team */}
       <div className="draft-bar-header">
-        <div className="draft-turn-line">
+        <div className="draft-turn-line" role="status">
           {isInReplay && <span className="draft-label">Replay of the real draft · </span>}
           {isComplete ? <span className="draft-complete">Draft complete</span> : turnLineText}
         </div>

@@ -11,6 +11,7 @@ import { LeveragePanel } from './LeveragePanel'
 import { NoteBlock } from './NoteBlock'
 import { OutlookPanel } from './OutlookPanel'
 import { PoolMatrix } from './PoolMatrix'
+import { PLANNING_PICKS } from './PoolMatrixCell'
 import './SeriesBoard.css'
 
 // 2.4: Briefing content — collapsed or expanded
@@ -250,6 +251,31 @@ export function SeriesBoard({
 
   const usedPlan = livePlan ?? plan
 
+  const revealedGame = revealedGames.has(gameNumber) ? draft.games.find(g => g.gameNumber === gameNumber) : undefined
+  const reveal = useMemo(() => {
+    if (!revealedGame || !plan) return undefined
+    const lineup = [
+      ...plan.players.flatMap(([, roles]) => Array.from(roles.values())),
+      ...plan.unknownRolePlayers.flatMap(([, group]) => group),
+    ]
+    const byPlayer = new Map<string, { championId: string; rank: number }>()
+    let inPool = 0
+    let forecastCount = 0
+    let topFive = 0
+    for (const pick of revealedGame.picks) {
+      const player = lineup.find(p => p.playerId === pick.playerId)
+      if (!player) continue
+      const rank = player.likelihoods.findIndex(l => l.championId === pick.championId) + 1
+      if (player.likelihoods.length > 0) {
+        forecastCount++
+        if (rank > 0 && rank <= PLANNING_PICKS) topFive++
+      }
+      byPlayer.set(player.playerId, { championId: pick.championId, rank })
+      if (player.pool.credible.some(c => c.championId === pick.championId)) inPool++
+    }
+    return { byPlayer, inPool, total: byPlayer.size, forecastCount, topFive, actualCount: revealedGame.picks.length }
+  }, [revealedGame, plan])
+
   // Current draft slot info for PoolMatrix
   const currentDraftSlot = useMemo(() => {
     if (!draftMode) return null
@@ -462,6 +488,11 @@ export function SeriesBoard({
                   const next = new Set(revealedGames)
                   next.add(selectedUpcoming.gameNumber)
                   setRevealedGames(next)
+                  if (draftMode) {
+                    setDraftMode(false)
+                    dispatch({ type: 'reset' })
+                    setReplayConfirm(false)
+                  }
                 }}
               >
                 Reveal Game {selectedUpcoming.gameNumber}
@@ -513,8 +544,7 @@ export function SeriesBoard({
             </div>
           )
         }
-        const revealedSelected = draft.games.find((g) => g.gameNumber === gameNumber && revealedGames.has(g.gameNumber))
-        if (revealedSelected) {
+        if (revealedGame) {
           const nextGame = draft.games.find((g) => g.gameNumber > gameNumber)
           if (nextGame) {
             return (
@@ -534,6 +564,17 @@ export function SeriesBoard({
         return null
       })()}
       </div>
+
+      {reveal && (
+        <div className="reveal-summary">
+          <span>{reveal.inPool} of {reveal.total} picks came from the available pools</span>
+          {reveal.forecastCount > 0 && (
+            <span>
+              {reveal.topFive} of {reveal.forecastCount} picks{reveal.forecastCount < reveal.actualCount ? ' with a forecast' : ''} were in the model’s top five
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Draft bar (when in draft mode) ────────────────── */}
       {draftMode && gameNumber && usedPlan && (
@@ -564,7 +605,7 @@ export function SeriesBoard({
           draft={draft}
           teamMap={teamMap}
           championMap={championMap}
-          revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
+          revealedGame={revealedGame}
           onBan={draftMode && currentDraftSlot?.type === 'b' ? handleBan : undefined}
           actingTeamId={draftMode && currentDraftSlot?.type === 'b' ? currentDraftSlot.teamId : undefined}
           onSelectChampion={(championId) => {
@@ -580,12 +621,11 @@ export function SeriesBoard({
       {gameNumber && usedPlan && (
         <PoolMatrix
           plan={usedPlan}
-          forecastPlan={plan ?? undefined}
           draft={draft}
           teamMap={teamMap}
           championMap={championMap}
           gameNumber={gameNumber}
-          revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
+          revealedPicks={reveal?.byPlayer}
           draftMode={draftMode}
           draftConditioned={draftConditioned}
           currentDraftSlot={currentDraftSlot}
