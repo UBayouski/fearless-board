@@ -1,40 +1,80 @@
+/* Sticky draft bar: one control line, phase labels, two slot rows. */
 .draft-bar {
+  --slot-w: 96px;
+  --slot-gap: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.draft-first-team {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
   margin-bottom: 0.5rem;
 }
 
+.draft-bar-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.draft-turn-line {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
 .draft-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 400;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.draft-first-team-select {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0.2rem 0.4rem;
-  font-size: 0.8rem;
+.draft-controls,
+.draft-first-team,
+.draft-first-team-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
-/* 6.2.6: Two slot rows, one per team */
+.draft-first-team-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+}
+
+.draft-first-team-btn.selected {
+  background: var(--line);
+  color: var(--text);
+}
+
+.draft-first-team-btn:disabled {
+  cursor: default;
+}
+
+.draft-first-team-btn:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
+}
+
+/* Slot rows: a team label, then four phase groups */
 .draft-team-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.25rem;
+  margin-top: 0.15rem;
 }
 
 .draft-team-row-label {
@@ -42,42 +82,55 @@
   font-weight: 600;
   font-size: 0.8rem;
   color: var(--text);
-  min-width: 8rem;
+  width: 7rem;
   text-align: right;
-}
-
-.draft-team-slots {
-  display: flex;
-  gap: 0.25rem;
-  flex: 1;
-}
-
-.draft-phase-gap {
-  margin-left: 0.5rem;
-}
-
-.draft-slot {
-  width: 2.2rem;
-  height: 1.6rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
-  font-size: 0.65rem;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--muted);
+  flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.draft-slot-b {
-  border-color: var(--line);
+.draft-team-slots {
+  display: flex;
+  gap: 0.25rem 1rem;
+  min-width: 0;
 }
 
-.draft-slot-p {
-  border-color: var(--line);
+.draft-phase {
+  display: flex;
+  gap: var(--slot-gap);
+}
+
+.draft-phase-labels .draft-phase {
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.draft-phase-labels .draft-phase-3 {
+  width: calc(3 * var(--slot-w) + 2 * var(--slot-gap));
+}
+
+.draft-phase-labels .draft-phase-2 {
+  width: calc(2 * var(--slot-w) + var(--slot-gap));
+}
+
+.draft-slot {
+  width: var(--slot-w);
+  height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 0.35rem;
+  border-radius: 3px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .draft-slot-blue {
@@ -94,25 +147,31 @@
 }
 
 .draft-slot-filled {
+  background: var(--surface-2);
+}
+
+/* Bans struck through and muted, picks in normal text */
+.draft-slot-b.draft-slot-filled {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.draft-slot-p.draft-slot-filled {
   color: var(--text);
-  background: var(--surface);
+  font-weight: 600;
 }
 
 .draft-slot-placeholder {
-  font-weight: 600;
-  font-size: 0.7rem;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
 }
 
 .draft-slot-content {
-  font-size: 0.6rem;
-  padding: 0 0.2rem;
-}
-
-.draft-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .draft-btn {
@@ -134,14 +193,19 @@
   cursor: default;
 }
 
+.draft-btn:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
+}
+
 .draft-complete {
-  font-size: 0.75rem;
   color: var(--hit);
-  font-weight: 600;
 }
 
 .draft-ban-entry {
   position: relative;
+  width: 16rem;
+  flex-shrink: 0;
 }
 
 .draft-search {
@@ -153,6 +217,11 @@
   padding: 0.3rem 0.5rem;
   font-size: 0.8rem;
   box-sizing: border-box;
+}
+
+.draft-search:focus {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 0;
 }
 
 .draft-search-results {
@@ -180,16 +249,33 @@
   font-size: 0.8rem;
 }
 
-.draft-search-result:hover {
+.draft-search-result:hover,
+.draft-search-result.focused {
   background: var(--surface-2);
 }
 
-.draft-pick-entry {
-  padding: 0.25rem 0;
+.draft-search-result:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: -2px;
 }
 
-.draft-pick-label {
-  font-size: 0.8rem;
-  color: var(--ember);
-  font-style: italic;
+/* Narrow widths: the phase groups wrap and the labels go */
+@media (max-width: 1250px) {
+  .draft-team-slots,
+  .draft-bar-header {
+    flex-wrap: wrap;
+  }
+  .draft-phase-labels {
+    display: none;
+  }
+  .draft-team-row {
+    align-items: flex-start;
+  }
+  .draft-team-row-label {
+    width: 5rem;
+  }
+  /* A wrapped bar is too tall to keep on screen */
+  .draft-bar {
+    position: static;
+  }
 }

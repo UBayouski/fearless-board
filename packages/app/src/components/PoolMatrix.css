@@ -6,16 +6,22 @@
   gap: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
-  overflow: hidden;
+  /* clip, not hidden or auto: a scroll container here would stop the header sticking to the window */
+  overflow: clip;
   margin-bottom: 1rem;
   background: var(--surface);
 }
 
+/* 7: Sticky header row */
 .pool-matrix-header {
   display: grid;
   grid-template-columns: 4rem 1fr 1fr;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  /* Below the draft bar when there is one; the bar publishes its height. */
+  top: var(--draft-bar-h);
+  z-index: 10;
 }
 
 .pool-matrix-corner {
@@ -30,6 +36,12 @@
   text-align: center;
   border-right: 1px solid var(--line);
   color: var(--text);
+  background: var(--surface-2);
+}
+
+/* 2.3: Acting team's column header gets an ember underline */
+.pool-matrix-acting {
+  border-bottom: 2px solid var(--ember);
 }
 
 .pool-lineup-note {
@@ -72,6 +84,11 @@
 
 .pool-matrix-cell:last-child {
   border-right: none;
+}
+
+/* 2.5: On a pick turn, dim the other team's column */
+.pool-matrix-other-team {
+  opacity: 0.75;
 }
 
 /* ── Responsive: stack team columns under 900px ─────────────── */

@@ -30,7 +30,6 @@
 .pool-placeholder-sub {
   font-size: 0.7rem;
   color: var(--muted);
-  opacity: 0.7;
   margin-top: 0.1rem;
 }
 
@@ -163,9 +162,10 @@
   opacity: 0.3;
 }
 
-/* 4: Stale tiles — last played >12 weeks ago */
+/* 2.6: Stale tiles — dim by weight and size, not opacity below 4.5:1 */
 .champ-tile-btn.stale {
-  opacity: 0.6;
+  font-weight: 400;
+  font-size: 0.8rem;
 }
 
 /* 3c: Burned tiles — dim text, strike-through, 2px ember left edge, ember game tag */
@@ -317,7 +317,6 @@
   text-decoration: line-through;
   border-left: 2px solid var(--ember);
   color: var(--ember);
-  opacity: 0.8;
 }
 
 .champ-tile-btn.draft-removed small {
@@ -332,6 +331,7 @@
 
 .champ-search-input {
   width: 100%;
+  box-sizing: border-box;
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
   background: var(--surface-2);
@@ -342,7 +342,13 @@
 }
 
 .champ-search-input:focus {
-  outline: 1px solid var(--blue-side);
+  outline: 2px solid var(--blue-side);
+  outline-offset: 0;
+}
+
+.champ-search-input:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 0;
 }
 
 .champ-search-results {
@@ -370,12 +376,18 @@
   font-family: inherit;
 }
 
-.champ-search-result:hover {
+.champ-search-result:hover,
+.champ-search-result.focused {
   background: var(--surface-2);
 }
 
+.champ-search-result:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: -2px;
+}
+
 .champ-tile-btn.draft-unavailable {
-  opacity: 0.3;
+  opacity: 0.5;
   text-decoration: line-through;
 }
 
@@ -389,6 +401,7 @@
   outline: 2px solid var(--blue-side);
 }
 
+/* 2.10: Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .champ-tile-btn,
   .champ-tile,

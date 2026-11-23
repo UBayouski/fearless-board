@@ -7,9 +7,82 @@ import { CompactHistoryCard } from './CompactHistoryCard'
 import { GameColumn } from './GameColumn'
 import { DraftBar } from './DraftBar'
 import { LeveragePanel } from './LeveragePanel'
+import { NoteBlock } from './NoteBlock'
 import { OutlookPanel } from './OutlookPanel'
 import { PoolMatrix } from './PoolMatrix'
 import './SeriesBoard.css'
+
+// 2.4: Briefing content — collapsed or expanded
+function BriefingContent({
+  draftActive,
+  onExpand,
+  onCollapse,
+  notesData,
+  draft,
+  teamMap,
+  plan,
+  championMap,
+  gameNumber,
+  selectedChampion,
+  onSelectChampion,
+  unavailable,
+  draftMode,
+}: {
+  draftActive: boolean
+  onExpand: () => void
+  /** Given while a draft is running, so the opened briefing can be hidden again. */
+  onCollapse?: () => void
+  notesData?: { model: string; games: Record<string, Record<string, WrittenNote>> }
+  draft: SeriesDraft
+  teamMap: Map<string, TeamRef>
+  plan: GamePlan
+  championMap: Map<string, ChampionRef>
+  gameNumber: number
+  selectedChampion: string | null
+  onSelectChampion: (championId: string | null) => void
+  unavailable: Set<string>
+  draftMode: boolean
+}) {
+  return (
+    <div className={`briefing-row ${draftActive ? 'briefing-collapsed' : ''}`}>
+      {draftActive ? (
+        <button
+          type="button"
+          className="briefing-collapse-toggle"
+          onClick={onExpand}
+        >
+          Pre-game note and series outlook — show
+        </button>
+      ) : (
+        <>
+          {onCollapse && (
+            <button type="button" className="briefing-collapse-toggle" onClick={onCollapse}>
+              Pre-game note and series outlook — hide
+            </button>
+          )}
+          {notesData && (
+            <NoteBlock
+              draft={draft}
+              teamMap={teamMap}
+              notesData={notesData}
+              gameNumber={gameNumber}
+              draftMode={draftMode}
+            />
+          )}
+          <OutlookPanel
+            plan={plan}
+            draft={draft}
+            teamMap={teamMap}
+            championMap={championMap}
+            selectedChampion={selectedChampion}
+            onSelectChampion={onSelectChampion}
+            unavailable={unavailable}
+          />
+        </>
+      )}
+    </div>
+  )
+}
 
 function createInitialSession(draft: SeriesDraft, game: GameDraft): DraftSession {
   // 5.2.8: Default first team is the blue side of this game
@@ -64,6 +137,9 @@ export function SeriesBoard({
 
   // Draft mode state
   const [draftMode, setDraftMode] = useState(initialSession != null && initialSession.actions.length > 0)
+
+  // 2.4: Briefing row expanded state (for draft mode collapse)
+  const [briefingExpanded, setBriefingExpanded] = useState(false)
 
   // 6.2.5: Replay confirmation — ask once before starting
   const [replayConfirm, setReplayConfirm] = useState(false)
@@ -294,15 +370,9 @@ export function SeriesBoard({
       <div className="series-header">
         <div className="series-teams-display">
           <span className="team-name display">{name0}</span>
-          <span className="series-vs">vs</span>
-          <span className="team-name display">{name1}</span>
-        </div>
-        <div className="series-score-line">
-          {/* Team 0 name + pips */}
-          <span className="team-name display" style={{ fontSize: '1.2rem' }}>{name0}</span>
           <div className="score-pips">
             {Array.from({ length: maxGames }, (_, i) => {
-              // 3c: Fill only for games before gameNumber
+              // Filled only for games before the selected one
               const game = draft.games[i]
               const isPast = game && game.gameNumber < gameNumber
               const won = isPast && game.winnerTeamId === draft.teamIds[0]
@@ -310,35 +380,37 @@ export function SeriesBoard({
             })}
           </div>
           <span className="score-text">{score.score0}–{score.score1}</span>
-          {/* Team 1 name + pips */}
-          <span className="team-name display" style={{ fontSize: '1.2rem' }}>{name1}</span>
           <div className="score-pips">
             {Array.from({ length: maxGames }, (_, i) => {
+              // Filled only for games before the selected one
               const game = draft.games[i]
               const isPast = game && game.gameNumber < gameNumber
               const won = isPast && game.winnerTeamId === draft.teamIds[1]
               return <div key={i} className={`pip ${won ? 'filled' : ''}`} />
             })}
           </div>
+          <span className="team-name display">{name1}</span>
         </div>
-        {gameSides && (
-          <div className="series-sides-line">
-            Game {gameNumber}:{' '}
-            <span style={{ color: 'var(--blue-side)' }}>
-              {teamMap.get(gameSides.blue)?.name ?? gameSides.blue} blue
-            </span>
-            {' · '}
-            <span style={{ color: 'var(--red-side)' }}>
-              {teamMap.get(gameSides.red)?.name ?? gameSides.red} red
-            </span>
-          </div>
-        )}
         <p className="series-info">
+          {gameSides && (
+            <>
+              Game {gameNumber}:{' '}
+              <span style={{ color: 'var(--blue-side)' }}>
+                {teamMap.get(gameSides.blue)?.name ?? gameSides.blue} blue
+              </span>
+              {' · '}
+              <span style={{ color: 'var(--red-side)' }}>
+                {teamMap.get(gameSides.red)?.name ?? gameSides.red} red
+              </span>
+              {' · '}
+            </>
+          )}
           {draft.event} · {draft.stage} · {new Date(draft.scheduledStart).toLocaleDateString()}
         </p>
       </div>
 
-      {/* ── Game stepper ──────────────────────────────────── */}
+      {/* ── Game buttons and reveal / draft buttons, one row ─ */}
+      <div className="game-controls">
       <div className="game-stepper">
         {draft.games.map((g) => (
           <button
@@ -391,8 +463,9 @@ export function SeriesBoard({
                     className="draft-btn-inline replay"
                     onClick={handleStartReplay}
                   >
-                    {replayConfirm ? 'Replay Draft — this shows the actual picks' : 'Replay Draft'}
+                    {replayConfirm ? 'Confirm replay' : 'Replay Draft'}
                   </button>
+                  {replayConfirm && <span className="draft-replay-warning">This shows the actual picks of this game.</span>}
                   {replayConfirm && (
                     <button
                       className="draft-btn-inline"
@@ -435,6 +508,7 @@ export function SeriesBoard({
         }
         return null
       })()}
+      </div>
 
       {/* ── Draft bar (when in draft mode) ────────────────── */}
       {draftMode && gameNumber && usedPlan && (
@@ -452,23 +526,40 @@ export function SeriesBoard({
         />
       )}
 
-      {/* ── Series outlook panel ──────────────────────────── */}
+      {/* ── 2.4: Briefing row — collapses in draft mode ─── */}
       {gameNumber && usedPlan && (
-        <OutlookPanel
-          plan={usedPlan}
+        <BriefingContent
+          draftActive={draftMode && session.actions.length > 0 && !briefingExpanded}
+          onExpand={() => setBriefingExpanded(true)}
+          onCollapse={draftMode && session.actions.length > 0 ? () => setBriefingExpanded(false) : undefined}
+          notesData={notesData}
           draft={draft}
           teamMap={teamMap}
+          plan={usedPlan}
           championMap={championMap}
+          gameNumber={gameNumber}
           selectedChampion={costChampion}
           onSelectChampion={setCostChampion}
           unavailable={draftConditioned?.unavailable ?? usedPlan.burned}
-          notesData={notesData}
-          gameNumber={gameNumber}
           draftMode={draftMode && session.actions.length > 0}
         />
       )}
 
-      {/* ── Pool matrix (first, within 300px) ─────────────── */}
+      {/* ── 6: Ban panel above matrix, collapsed ───────────── */}
+      {gameNumber && usedPlan && (
+        <LeveragePanel
+          plan={usedPlan}
+          draft={draft}
+          teamMap={teamMap}
+          championMap={championMap}
+          revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
+          onBan={draftMode && currentDraftSlot?.type === 'b' ? handleBan : undefined}
+          actingTeamId={draftMode && currentDraftSlot?.type === 'b' ? currentDraftSlot.teamId : undefined}
+          onSelectChampion={setCostChampion}
+        />
+      )}
+
+      {/* ── Pool matrix ────────────────────────────────────── */}
       {gameNumber && usedPlan && (
         <PoolMatrix
           plan={usedPlan}
@@ -484,20 +575,7 @@ export function SeriesBoard({
           lastRemoved={draftMode && 'lastRemoved' in usedPlan ? (usedPlan as GamePlan & { lastRemoved: { championId: string; type: 'ban' | 'pick' } | null }).lastRemoved : undefined}
           removedForPlayers={removedForPlayers}
           replayPickRanks={session.replay ? replayPickRanks : undefined}
-        />
-      )}
-
-      {/* ── Leverage panel (after matrix) ──────────────────── */}
-      {gameNumber && usedPlan && (
-        <LeveragePanel
-          plan={usedPlan}
-          draft={draft}
-          teamMap={teamMap}
-          championMap={championMap}
-          revealedGame={revealedGames.has(gameNumber) ? draft.games.find((g) => g.gameNumber === gameNumber) : undefined}
-          onBan={draftMode && currentDraftSlot?.type === 'b' ? handleBan : undefined}
-          actingTeamId={draftMode && currentDraftSlot?.type === 'b' ? currentDraftSlot.teamId : undefined}
-          onSelectChampion={setCostChampion}
+          actingTeamId={draftMode ? currentDraftSlot?.teamId : undefined}
         />
       )}
 

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { ChampionRef, PickLikelihood, PoolEntry, Role } from '@fearless-board/shared'
 import { burnedGameShare } from '@fearless-board/shared'
 import './PoolMatrixCell.css'
@@ -16,11 +16,34 @@ export function ChampionSearch({
   championMap: Map<string, ChampionRef>
 }) {
   const [query, setQuery] = useState('')
+  const [focusedIndex, setFocusedIndex] = useState(-1)
   const filtered = query
     ? Array.from(championMap.values())
         .filter(c => c.name.toLowerCase().includes(query.toLowerCase()) && !unavailable.has(c.id))
         .slice(0, 5)
     : []
+
+  // 2.8: Keyboard navigation
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (!filtered.length) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setFocusedIndex(i => Math.min(i + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setFocusedIndex(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && focusedIndex >= 0) {
+      e.preventDefault()
+      onSelect(filtered[focusedIndex].id)
+      setQuery('')
+      setFocusedIndex(-1)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setQuery('')
+      setFocusedIndex(-1)
+    }
+  }
+
   return (
     <div className="champ-search">
       <input
@@ -28,12 +51,19 @@ export function ChampionSearch({
         className="champ-search-input"
         placeholder={placeholder}
         value={query}
-        onChange={e => setQuery(e.target.value)}
+        onChange={e => { setQuery(e.target.value); setFocusedIndex(-1) }}
+        onKeyDown={handleKeyDown}
       />
       {filtered.length > 0 && (
         <div className="champ-search-results">
-          {filtered.map(c => (
-            <button key={c.id} type="button" className="champ-search-result" onClick={() => { onSelect(c.id); setQuery('') }}>
+          {filtered.map((c, idx) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`champ-search-result ${idx === focusedIndex ? 'focused' : ''}`}
+              onClick={() => { onSelect(c.id); setQuery(''); setFocusedIndex(-1) }}
+              onMouseEnter={() => setFocusedIndex(idx)}
+            >
               {c.name}
             </button>
           ))}

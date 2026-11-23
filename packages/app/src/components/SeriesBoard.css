@@ -1,14 +1,15 @@
 /* ── Series Board ───────────────────────────────────────────── */
 
 .series-header {
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .series-teams-display {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.2rem;
 }
 
 .series-teams-display .team-name {
@@ -74,10 +75,17 @@
 }
 
 /* ── Game stepper ───────────────────────────────────────────── */
+.game-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
 .game-stepper {
   display: flex;
   gap: 0.25rem;
-  margin-bottom: 1rem;
   flex-wrap: wrap;
 }
 
@@ -114,15 +122,21 @@
   outline-offset: 1px;
 }
 
-/* ── Reveal Section ─────────────────────────────────────────── */
+/* ── 8: Buttons ─────────────────────────────────────────────── */
 
 .reveal-section {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
+.draft-replay-warning {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* "Reveal Game N" — filled button */
 .reveal-btn {
   padding: 0.4rem 1rem;
   font-size: 0.85rem;
@@ -144,10 +158,11 @@
   outline-offset: 2px;
 }
 
+/* "Draft Game N" and "Replay Draft" — outline buttons */
 .draft-btn-inline {
-  padding: 0.4rem 1rem;
+  padding: 0.35rem 0.9rem;
   font-size: 0.85rem;
-  background: var(--surface-2);
+  background: transparent;
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -157,13 +172,18 @@
 }
 
 .draft-btn-inline:hover {
-  background: var(--line);
+  background: var(--surface-2);
+}
+
+.draft-btn-inline:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
 }
 
 .draft-btn-inline.replay {
-  background: var(--blue-side);
-  color: var(--bg);
-  border-color: var(--blue-side);
+  background: transparent;
+  color: var(--text);
+  border-color: var(--line);
 }
 
 .draft-btn-inline.replay:disabled {
@@ -175,6 +195,59 @@
   gap: 0.4rem;
   align-items: center;
   cursor: default;
+}
+
+/* ── 1,5: Briefing row ──────────────────────────────────────── */
+
+.briefing-row {
+  display: grid;
+  grid-template-columns: 40% 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  align-items: start;
+  min-height: 0;
+}
+
+/* With note: max 300px; without note: max 220px */
+.briefing-row {
+  max-height: 300px;
+  overflow: hidden;
+}
+
+/* 2.4: Collapsed briefing row in draft mode */
+.briefing-collapsed {
+  max-height: none;
+  overflow: visible;
+}
+
+.briefing-collapse-toggle {
+  grid-column: 1 / -1;
+  background: none;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: 'Inter', sans-serif;
+  text-align: left;
+  width: 100%;
+}
+
+.briefing-collapse-toggle:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.briefing-collapse-toggle:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
+}
+
+@media (max-width: 1200px) {
+  .briefing-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Score pips ─────────────────────────────────────────────── */
@@ -255,9 +328,9 @@
 }
 
 /* ── Full-width board ───────────────────────────────────────── */
+/* No overflow here: the window scrolls, so sticky bars stick to the window. */
 .board-full {
   flex: 1;
-  overflow-y: auto;
   padding: 1rem;
 }
 

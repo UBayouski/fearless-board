@@ -4,26 +4,43 @@
   border: 1px solid var(--line);
   border-radius: 6px;
   overflow: hidden;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
   background: var(--surface);
 }
 
-.leverage-panel-title {
-  padding: 0.6rem 1rem;
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 600;
-  font-size: 1rem;
+.leverage-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
+}
+
+.leverage-panel-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
   color: var(--text);
 }
 
-.leverage-panel-explanation {
-  padding: 0.4rem 1rem;
-  font-size: 0.75rem;
+.leverage-show-all {
+  background: transparent;
+  border: none;
   color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface-2);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0.15rem 0.4rem;
+  text-decoration: underline;
+}
+
+.leverage-show-all:hover {
+  color: var(--text);
+}
+
+.leverage-show-all:focus-visible {
+  outline: 2px solid var(--blue-side);
+  outline-offset: 1px;
 }
 
 .leverage-panel-grid {
@@ -32,8 +49,21 @@
   gap: 0;
 }
 
+/* Bans and denial picks side by side inside each team's column */
+.leverage-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 3fr);
+  gap: 0 1rem;
+}
+
+@media (max-width: 1500px) {
+  .leverage-sections {
+    grid-template-columns: 1fr;
+  }
+}
+
 .leverage-team-column {
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   border-right: 1px solid var(--line);
 }
 
@@ -44,13 +74,14 @@
 .leverage-team-name {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--text);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.3rem;
 }
 
 .leverage-section {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
+  min-width: 0;
 }
 
 .leverage-section:last-child {
@@ -81,10 +112,15 @@
   color: inherit;
 }
 
+/* 2.5: Acting team's column outlined on a ban turn */
+.leverage-team-column.acting-team {
+  outline: 2px solid var(--ember);
+  outline-offset: -2px;
+}
+
 /* 6.2.1: Clickable ban rows on a ban turn */
 .leverage-row-clickable {
   cursor: pointer;
-  outline: none;
 }
 
 .leverage-row-clickable:hover {

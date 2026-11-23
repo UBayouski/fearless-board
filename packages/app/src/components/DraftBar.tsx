@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChampionRef, DraftActionInput, GamePlan, SeriesDraft, TeamRef } from '@fearless-board/shared'
 import { DRAFT_ORDER } from '@fearless-board/shared'
 import './DraftBar.css'
@@ -49,6 +49,7 @@ export function DraftBar({
 
   // Ban search state
   const [banSearch, setBanSearch] = useState('')
+  const [banSearchIndex, setBanSearchIndex] = useState(-1)
 
   const filteredBans = (() => {
     if (!banSearch) return null
@@ -59,124 +60,169 @@ export function DraftBar({
       .slice(0, 5)
   })()
 
+  // 2.8: Keyboard navigation for ban search
+  const handleBanSearchKeyDown = (e: KeyboardEvent) => {
+    if (!filteredBans || filteredBans.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setBanSearchIndex(i => Math.min(i + 1, filteredBans.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setBanSearchIndex(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && banSearchIndex >= 0) {
+      e.preventDefault()
+      onBan(filteredBans[banSearchIndex].id)
+      setBanSearch('')
+      setBanSearchIndex(-1)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setBanSearch('')
+      setBanSearchIndex(-1)
+    }
+  }
+
+  // 2.3: Turn line text
+  const turnLineText = (() => {
+    if (isComplete || !currentSlot || !currentSide) return null
+    const teamId = sideToTeam.get(currentSide)
+    const team = teamId ? teamMap.get(teamId) : null
+    const teamName = team?.name ?? teamId
+    if (currentType === 'b') return `${teamName} to ban`
+    return `${teamName} to pick: click a champion in their column`
+  })()
+
+  // The matrix header sticks below this bar, so publish the bar's height for the stylesheet.
+  const barRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const bar = barRef.current
+    if (!bar || typeof ResizeObserver === 'undefined') return
+    const root = document.documentElement
+    const publish = () => root.style.setProperty('--draft-bar-h', `${bar.offsetHeight}px`)
+    const observer = new ResizeObserver(publish)
+    observer.observe(bar)
+    publish()
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--draft-bar-h')
+    }
+  }, [])
+
   return (
-    <div className="draft-bar">
-      {/* First team selector */}
-      <div className="draft-first-team">
-        <span className="draft-label">First team:</span>
-        <select
-          value={firstTeamId}
-          onChange={(e) => onFirstTeamChange(e.target.value)}
-          disabled={actions.length > 0}
-          className="draft-first-team-select"
-        >
-          {draft.teamIds.map((teamId) => {
-            const team = teamMap.get(teamId)
-            return (
-              <option key={teamId} value={teamId}>
-                {team?.name ?? teamId}
-              </option>
-            )
-          })}
-        </select>
+    <div className="draft-bar" ref={barRef}>
+      {/* One line: whose turn, ban search, undo and reset, first team */}
+      <div className="draft-bar-header">
+        <div className="draft-turn-line">
+          {isInReplay && <span className="draft-label">Replay of the real draft · </span>}
+          {isComplete ? <span className="draft-complete">Draft complete</span> : turnLineText}
+        </div>
+        {currentType === 'b' && !isComplete && !isInReplay && (
+          <div className="draft-ban-entry">
+            <input
+              type="text"
+              className="draft-search"
+              placeholder="Search champion to ban..."
+              aria-label="Search champion to ban"
+              value={banSearch}
+              onChange={(e) => { setBanSearch(e.target.value); setBanSearchIndex(-1) }}
+              onKeyDown={handleBanSearchKeyDown}
+            />
+            {filteredBans && filteredBans.length > 0 && (
+              <div className="draft-search-results">
+                {filteredBans.map((champ, idx) => (
+                  <button
+                    key={champ.id}
+                    type="button"
+                    className={`draft-search-result ${idx === banSearchIndex ? 'focused' : ''}`}
+                    onClick={() => { onBan(champ.id); setBanSearch(''); setBanSearchIndex(-1) }}
+                    onMouseEnter={() => setBanSearchIndex(idx)}
+                  >
+                    {champ.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="draft-controls">
+          <button type="button" className="draft-btn" onClick={onUndo} disabled={actions.length === 0 || !!isInReplay}>
+            Undo
+          </button>
+          <button type="button" className="draft-btn" onClick={onReset} disabled={actions.length === 0}>
+            Reset
+          </button>
+        </div>
+        <div className="draft-first-team">
+          <span className="draft-label">First team:</span>
+          <div className="draft-first-team-btns">
+            {draft.teamIds.map((teamId) => {
+              const isSelected = teamId === firstTeamId
+              return (
+                <button
+                  key={teamId}
+                  type="button"
+                  className={`draft-first-team-btn ${isSelected ? 'selected' : ''}`}
+                  aria-pressed={isSelected}
+                  onClick={() => onFirstTeamChange(teamId)}
+                  disabled={actions.length > 0}
+                >
+                  {teamMap.get(teamId)?.name ?? teamId}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* 6.2.6: Two slot rows, one per team in the matrix's team order */}
+      {/* Phase labels, then one slot row per team, grouped by phase so the columns line up */}
+      <div className="draft-team-row draft-phase-labels" aria-hidden="true">
+        <span className="draft-team-row-label" />
+        <div className="draft-team-slots">
+          {PHASES.map((phase, k) => (
+            <span key={k} className={`draft-phase draft-phase-${phase.to - phase.from}`}>{phase.label}</span>
+          ))}
+        </div>
+      </div>
       {draft.teamIds.map((teamId) => {
         const team = teamMap.get(teamId)
-        // Get this team's slots in turn order
-        const teamSlots = DRAFT_ORDER.map((slot, i) => ({ slot, index: i })).filter(({ slot }) => {
-          const side = slot[0] as '1' | '2'
-          const slotTeamId = sideToTeam.get(side)
-          return slotTeamId === teamId
-        })
+        const teamSlots = DRAFT_ORDER.map((slot, i) => ({ slot, index: i }))
+          .filter(({ slot }) => sideToTeam.get(slot[0] as '1' | '2') === teamId)
+        const sideColor = plan.game.sides?.blue === teamId ? 'blue' : 'red'
         return (
           <div key={teamId} className="draft-team-row">
             <span className="draft-team-row-label">{team?.name ?? teamId}</span>
             <div className="draft-team-slots">
-              {teamSlots.map(({ slot, index: i }) => {
-                const type = slot[2] as 'b' | 'p'
-                const isCurrent = i === turnIndex
-                const action = i < actions.length ? actions[i] : null
-                const isBlueSide = plan.game.sides?.blue === teamId
-                const sideColor = isBlueSide ? 'blue' : 'red'
-                // Gap between phases: after slot 5 (6th ban) and after slot 11 (4th pick of first phase)
-                const phaseGap = (i === 5 || i === 11) ? 'draft-phase-gap' : ''
-
-                return (
-                  <div
-                    key={i}
-                    className={`draft-slot draft-slot-${type} ${isCurrent ? 'draft-slot-current' : ''} ${action ? 'draft-slot-filled' : ''} draft-slot-${sideColor} ${phaseGap}`}
-                    title={`${team?.name ?? teamId} ${type === 'b' ? 'ban' : 'pick'}`}
-                  >
-                    {action ? (
-                      <span className="draft-slot-content">
-                        {championMap.get(action.championId)?.name ?? action.championId}
-                      </span>
-                    ) : (
-                      <span className="draft-slot-placeholder">
-                        {type === 'b' ? 'B' : 'P'}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
+              {PHASES.map((phase, k) => (
+                <div key={k} className="draft-phase">
+                  {teamSlots.slice(phase.from, phase.to).map(({ slot, index: i }) => {
+                    const type = slot[2] as 'b' | 'p'
+                    const action = i < actions.length ? actions[i] : null
+                    const name = action ? championMap.get(action.championId)?.name ?? action.championId : null
+                    return (
+                      <div
+                        key={i}
+                        className={`draft-slot draft-slot-${type} ${i === turnIndex ? 'draft-slot-current' : ''} ${action ? 'draft-slot-filled' : ''} draft-slot-${sideColor}`}
+                        title={`${team?.name ?? teamId} ${type === 'b' ? 'ban' : 'pick'}${name ? `: ${name}` : ''}`}
+                      >
+                        {name
+                          ? <span className="draft-slot-content">{name}</span>
+                          : <span className="draft-slot-placeholder">{type === 'b' ? 'ban' : 'pick'}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
             </div>
           </div>
         )
       })}
-
-      {/* Controls */}
-      <div className="draft-controls">
-        {isInReplay && <span className="draft-label">Replay of the real draft</span>}
-        <button className="draft-btn" onClick={onUndo} disabled={actions.length === 0 || !!isInReplay}>
-          Undo
-        </button>
-        <button className="draft-btn" onClick={onReset} disabled={actions.length === 0}>
-          Reset
-        </button>
-        {isComplete && <span className="draft-complete">Draft complete</span>}
-      </div>
-
-      {/* Ban entry */}
-      {currentType === 'b' && !isComplete && !isInReplay && (
-        <div className="draft-ban-entry">
-          <input
-            type="text"
-            className="draft-search"
-            placeholder="Search champion to ban..."
-            value={banSearch}
-            onChange={(e) => setBanSearch(e.target.value)}
-          />
-          {filteredBans && filteredBans.length > 0 && (
-            <div className="draft-search-results">
-              {filteredBans.map((champ) => (
-                <button
-                  key={champ.id}
-                  className="draft-search-result"
-                  onClick={() => { onBan(champ.id); setBanSearch('') }}
-                >
-                  {champ.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Pick entry - shown in pool matrix cells, not here */}
-      {currentType === 'p' && !isComplete && (
-        <div className="draft-pick-entry">
-          <span className="draft-pick-label">
-            {(() => {
-              if (!currentSide) return 'Pick turn'
-              const teamId = sideToTeam.get(currentSide)
-              const team = teamId ? teamMap.get(teamId) : null
-              return `${team?.name ?? teamId} to pick — click a champion in the pool matrix`
-            })()}
-          </span>
-        </div>
-      )}
     </div>
   )
 }
+
+// Each team has ten slots: three bans, three picks, two bans, two picks.
+const PHASES = [
+  { label: 'Bans', from: 0, to: 3 },
+  { label: 'Picks', from: 3, to: 6 },
+  { label: 'Bans', from: 6, to: 8 },
+  { label: 'Picks', from: 8, to: 10 },
+]

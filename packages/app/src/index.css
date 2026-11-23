@@ -5,6 +5,8 @@
 
 /* ── Dark theme ─────────────────────────────────────────────── */
 :root {
+  /* Height of the sticky draft bar; the bar sets it while a draft is open. */
+  --draft-bar-h: 0px;
   font-family: 'Inter', system-ui, sans-serif;
   line-height: 1.5;
   color-scheme: dark;

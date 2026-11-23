@@ -19,6 +19,7 @@ export function PoolMatrix({
   lastRemoved,
   removedForPlayers,
   replayPickRanks,
+  actingTeamId,
 }: {
   plan: GamePlan
   draft: SeriesDraft
@@ -36,6 +37,8 @@ export function PoolMatrix({
   removedForPlayers?: Set<string>
   /** 6.2.5: Replay pick ranks — playerId → rank (0 = outside top 10). */
   replayPickRanks?: Map<string, number>
+  /** 2.3: The team acting on the current turn (for ember underline). */
+  actingTeamId?: string | null
 }) {
   const { burnedByGame, players } = plan
 
@@ -85,8 +88,9 @@ export function PoolMatrix({
             const team = teamMap.get(teamId)
             const name = team?.name ?? teamId
             const teamLineupChanged = plan.lineupChanged.get(teamId)
+            const isActing = actingTeamId === teamId
             return (
-              <div key={teamId} className="pool-matrix-team-header">
+              <div key={teamId} className={`pool-matrix-team-header ${isActing ? 'pool-matrix-acting' : ''}`}>
                 {name}
                 {teamLineupChanged && <span className="pool-lineup-note">lineup changed during this series; showing the players of game {gameNumber - 1 >= 1 ? gameNumber - 1 : 1}</span>}
               </div>
@@ -109,8 +113,10 @@ export function PoolMatrix({
               const playerHasPicked = draftConditioned?.pickedPlayers.has(gp.playerId) ?? false
               const pickedChampionId = draftConditioned?.pickedChampions.get(gp.playerId)
               const replayRank = replayPickRanks?.get(gp.playerId) ?? undefined
+              // 2.5: On a pick turn, dim the other team's column
+              const isOtherTeam = draftMode && currentDraftSlot?.type === 'p' && currentDraftSlot?.teamId !== teamId
               return (
-                <div key={teamId} className="pool-matrix-cell">
+                <div key={teamId} className={`pool-matrix-cell ${isOtherTeam ? 'pool-matrix-other-team' : ''}`}>
                   <PoolMatrixCell
                     playerName={gp.playerName}
                     playerId={gp.playerId}
