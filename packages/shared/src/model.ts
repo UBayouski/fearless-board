@@ -368,7 +368,22 @@ export function buildPickLikelihoods(
     allChampionIds,
   )
 
-  return pickLikelihoods(model, candidates)
+  const likelihoods = pickLikelihoods(model, candidates)
+
+  // Add plain role share (from raw counts, not logarithmic features)
+  const total45 = rc.total45
+  const totalAll = rc.totalAll
+  return likelihoods.map((l) => {
+    const n45 = rolePicks45.get(l.championId) ?? 0
+    const nAll = rolePicksAll.get(l.championId) ?? 0
+    return {
+      ...l,
+      roleShare: {
+        recent: total45 > 0 ? n45 / total45 : null,
+        allTime: totalAll > 0 ? nAll / totalAll : 0,
+      },
+    }
+  })
 }
 
 // ── Ban leverage and denial picks ────────────────────────────────────
@@ -648,12 +663,16 @@ export function gamePlan(
         )
       }
 
+      // Sum of games over the pool: total number of earlier games for this player
+      const priorGames = pool.reduce((sum, e) => sum + e.games, 0)
+
       const gp = {
         playerId: lp.playerId,
         playerName: lp.playerName,
         role: role ?? null,
         pool: { credible, burned: burnedEntries },
         likelihoods,
+        priorGames,
       }
 
       if (role) {

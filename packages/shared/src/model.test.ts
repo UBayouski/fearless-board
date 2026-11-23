@@ -293,11 +293,12 @@ test('buildPickLikelihoods: same result as pickFeatures + pickLikelihoods', () =
 function makeLikelihoods(champions: [string, number][]): PickLikelihood[] {
   // Normalize to probabilities
   const sum = champions.reduce((s, [, p]) => s + p, 0)
-  if (sum === 0) return champions.map(([id]) => ({ championId: id, probability: 0, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } }))
+  if (sum === 0) return champions.map(([id]) => ({ championId: id, probability: 0, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } }))
   return champions.map(([id, p]) => ({
     championId: id,
     probability: p / sum,
     features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 },
+    roleShare: { recent: null, allTime: 0 },
   }))
 }
 
@@ -536,9 +537,9 @@ test('draftSlotSide and draftSlotType follow the sequence', () => {
 
 test('conditionLikelihoods: rescaled list sums to 1', () => {
   const likelihoods: PickLikelihood[] = [
-    { championId: 'c1', probability: 0.5, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
-    { championId: 'c2', probability: 0.3, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
-    { championId: 'c3', probability: 0.2, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c1', probability: 0.5, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
+    { championId: 'c2', probability: 0.3, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
+    { championId: 'c3', probability: 0.2, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
   ]
   const unavailable = new Set(['c2'])
   const result = conditionLikelihoods(likelihoods, unavailable)
@@ -554,9 +555,9 @@ test('conditionLikelihoods: rescaled list sums to 1', () => {
 
 test('conditionLikelihoods: banned champion disappears from all lists', () => {
   const likelihoods: PickLikelihood[] = [
-    { championId: 'c1', probability: 0.4, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
-    { championId: 'c2', probability: 0.35, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
-    { championId: 'c3', probability: 0.25, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c1', probability: 0.4, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
+    { championId: 'c2', probability: 0.35, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
+    { championId: 'c3', probability: 0.25, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
   ]
   const unavailable = new Set(['c2'])
   const result = conditionLikelihoods(likelihoods, unavailable)
@@ -566,8 +567,8 @@ test('conditionLikelihoods: banned champion disappears from all lists', () => {
 
 test('conditionLikelihoods: picked player gets empty list', () => {
   const likelihoods: PickLikelihood[] = [
-    { championId: 'c1', probability: 0.5, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
-    { championId: 'c2', probability: 0.5, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c1', probability: 0.5, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
+    { championId: 'c2', probability: 0.5, features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 }, roleShare: { recent: null, allTime: 0 } },
   ]
   const unavailable = new Set<string>()
   const pickedPlayers = new Set(['p1'])
@@ -767,4 +768,41 @@ test('gamePlan: both teams get ban leverage', () => {
     assert.ok(oppPlayerIds.some(id => ['p6', 'p7', 'p8', 'p9', 'p10'].includes(id)),
       'opponent hits should reference tB players')
   }
+})
+
+test('buildPickLikelihoods: roleShare is plain count ratio', () => {
+  // Champion c1 has 3 of 20 recent top picks → roleShare.recent = 0.15
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),
+  ]
+
+  const roleCounts = {
+    top: { total45: 20, totalAll: 100, champions: { c1: [3, 10] as [number, number], c2: [5, 20] as [number, number] } },
+  }
+
+  const examples: PickExample[] = []
+  for (let i = 0; i < 50; i++) {
+    examples.push({
+      playerId: 'p1', role: 'top' as Role, seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 1, played: 1, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+
+  const likelihoods = buildPickLikelihoods(
+    model, 'p1', 'top', '2025-02-01', picks, new Set(), roleCounts, new Set(['c1', 'c2']),
+  )
+
+  const c1Likelihood = likelihoods.find(l => l.championId === 'c1')
+  assert.ok(c1Likelihood !== undefined, 'c1 should be in likelihoods')
+  assert.equal(c1Likelihood!.roleShare!.recent, 0.15, 'c1 recent share should be 3/20 = 0.15')
+  assert.equal(c1Likelihood!.roleShare!.allTime, 0.1, 'c1 allTime share should be 10/100 = 0.1')
+
+  const c2Likelihood = likelihoods.find(l => l.championId === 'c2')
+  assert.ok(c2Likelihood !== undefined, 'c2 should be in likelihoods')
+  assert.equal(c2Likelihood!.roleShare!.recent, 0.25, 'c2 recent share should be 5/20 = 0.25')
 })

@@ -13,14 +13,15 @@
     "dev": "pnpm --filter @fearless-board/app dev",
     "build": "pnpm --filter @fearless-board/app build",
     "data": "pnpm --filter @fearless-board/pipeline start",
-    "test": "node --test \"packages/*/src/**/*.test.ts\"",
+    "test": "node --test \"packages/*/src/**/*.test.ts\" && pnpm --filter @fearless-board/app exec vitest run",
     "typecheck": "tsc -p packages/shared && tsc -p packages/pipeline && pnpm --filter @fearless-board/app exec tsc -b",
     "lint": "pnpm --filter @fearless-board/app lint",
     "check:data": "node scripts/check-no-data.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "~7.0.2"
+    "typescript": "~7.0.2",
+    "vitest": "^5.1.1"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

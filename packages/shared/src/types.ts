@@ -151,6 +151,8 @@ export interface PickLikelihood {
   championId: string
   probability: number
   features: PickFeatures
+  /** Plain share of picks in this role: recent (45-day) and all-time. Present when built via buildPickLikelihoods. */
+  roleShare?: { recent: number | null; allTime: number }
 }
 
 // ── Backtest types ───────────────────────────────────────────────────
@@ -341,6 +343,8 @@ export interface GamePlanPlayer {
   role: Role | null
   pool: { credible: PoolEntry[]; burned: PoolEntry[] }
   likelihoods: PickLikelihood[]
+  /** Sum of `games` over the pool: total number of earlier games for this player. */
+  priorGames: number
   /** True if this player is a substitute (not in the lineup shown before reveal). */
   substitute?: boolean
 }

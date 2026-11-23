@@ -46,8 +46,7 @@ export function LeveragePanel({
   const playerPriorGames = new Map<string, number>()
   for (const [, roleMap] of players) {
     for (const [, gp] of roleMap) {
-      const totalGames = gp.pool.credible.length + gp.pool.burned.length
-      playerPriorGames.set(gp.playerId, totalGames)
+      playerPriorGames.set(gp.playerId, gp.priorGames)
     }
   }
 

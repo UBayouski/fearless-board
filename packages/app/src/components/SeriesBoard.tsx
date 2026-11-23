@@ -17,6 +17,7 @@ export function SeriesBoard({
   selectedGame,
   onSelectGame,
   backtestStats,
+  model: propModel,
 }: {
   draft: SeriesDraft
   picks: PickRow[]
@@ -32,6 +33,8 @@ export function SeriesBoard({
     gamesPlayedTop10?: number
     gameCount?: number
   }
+  /** Optional model prop (for testing); when absent, loaded via fetch. */
+  model?: PickModel
 }) {
   const gameNumber = selectedGame ?? (() => {
     if (draft.games.length >= 3) return 3
@@ -42,12 +45,14 @@ export function SeriesBoard({
   const [revealedGames, setRevealedGames] = useState<Set<number>>(new Set())
 
   // Load model (shared with PoolMatrix and LeveragePanel)
-  const [model, setModel] = useState<PickModel | undefined>()
+  const [loadedModel, setLoadedModel] = useState<PickModel | undefined>()
+  const model = propModel ?? loadedModel
   useEffect(() => {
+    if (propModel) return // model provided as prop, skip fetch
     fetch(`${import.meta.env.BASE_URL}data/model.json`).then(async (r) => {
-      if (r.ok) setModel(await r.json())
+      if (r.ok) setLoadedModel(await r.json())
     }).catch(() => {})
-  }, [])
+  }, [propModel])
 
   // Compute gamePlan once (memoised on series, game number, and model)
   const plan = useMemo(() => {

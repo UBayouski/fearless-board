@@ -96,6 +96,7 @@ export function PoolMatrix({
                     seriesDate={draft.scheduledStart}
                     revealedPick={revealedPickMap?.get(gp.playerId)}
                     likelihoods={gp.likelihoods}
+                    priorGames={gp.priorGames}
                     substitute={gp.substitute}
                   />
                 </div>
@@ -129,6 +130,7 @@ export function PoolMatrix({
                         seriesDate={draft.scheduledStart}
                         revealedPick={revealedPickMap?.get(gp.playerId)}
                         likelihoods={gp.likelihoods}
+                        priorGames={gp.priorGames}
                         substitute={gp.substitute}
                       />
                     ))}

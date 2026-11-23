@@ -132,3 +132,44 @@ what a direct calculation gives. Four things remain:
   to a string with `react-dom/server` on a small fixture and checks for both team names, ten player names
   and the panel title, as part of `pnpm test`. The root test script only runs `packages/*/src/**/*.test.ts`;
   make it include the app's test (`.test.tsx`). Also remove the empty folder `packages/app/scripts`.
+
+## 8. Corrections after the fourth review
+
+Fixed and confirmed: "limited history" on ban rows, the form for players with fewer than 5 earlier games.
+Two things remain; do both, nothing else.
+
+### 8.1 The "why" line shows a logarithm as a percentage
+
+Tiles read "-200% of all top picks". `PoolMatrixCell.tsx` line 79 multiplies the model features `roleMeta`
+and `roleAllTime` by 100. Those are logarithms of a smoothed share (about -2.0), not shares, and because
+they are negative the code always falls through to the "all" label.
+
+- In `gamePlan`, add to each likelihood entry the plain counts from `draft.roleCounts[role]`:
+  `roleShare: { recent: n45 / total45 or null when total45 is 0, allTime: nAll / totalAll }`.
+- The tile shows `Math.round(100 * recent)` + "% of recent <role> picks" when `recent` is not null, else
+  the all-time share + "% of all <role> picks"; then " · not played" for champions the player has not
+  played. The cell does no arithmetic on model features.
+- Test in `model.test.ts`: on the two-team fixture, a champion with 3 of 20 recent role picks has
+  `roleShare.recent` equal to 0.15.
+- Expected on the default series: BrokenBlade's Rumble reads "15% of recent top picks".
+- Wording: "1 earlier game in the data" (singular) for exactly one game.
+
+### 8.2 The render test (asked for in sections 6 and 7, still missing)
+
+No test renders the board, so a crash or a nonsense label passes every check. This is required.
+
+- File: `packages/app/src/components/SeriesBoard.test.tsx`.
+- It builds a small fixture (two teams, five players each with roles, three games, a few earlier picks per
+  player, role counts, champions seen, a model with four weights) and calls
+  `renderToString(<SeriesBoard ... />)` from `react-dom/server`. `SeriesBoard` loads `model.json` with
+  `fetch` inside an effect, which does not run in `renderToString`: add an optional `model` prop to
+  `SeriesBoard` that the test passes in, and that the fetch fills when absent.
+- Assertions: the output contains both team names, all ten player names, the text "Bans & Denial Picks"
+  (HTML-escaped), at least one "% of recent", and no "NaN", no "undefined" and no "-" directly before a
+  digit followed by "%".
+- Make `pnpm test` run it: the root script only matches `*.test.ts`. Use
+  `node --test "packages/*/src/**/*.test.ts" "packages/*/src/**/*.test.tsx"` with whatever loader the app
+  needs for JSX and CSS imports, or run the app's test with `vitest` from the root script. Either is fine;
+  `pnpm test` must fail if this test fails.
+- Prove it works: temporarily break `gamePlan` (for example return an empty `players` list), show that
+  `pnpm test` fails, then restore it. Report that output.

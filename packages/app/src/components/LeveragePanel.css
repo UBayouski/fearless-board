@@ -127,8 +127,7 @@
 .leverage-limited-history {
   display: block;
   font-size: 0.65rem;
-  color: var(--ember);
-  font-style: italic;
+  color: var(--muted);
   margin-top: 0.1rem;
 }
 

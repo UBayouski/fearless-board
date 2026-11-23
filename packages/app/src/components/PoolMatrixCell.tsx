@@ -16,6 +16,7 @@ export function PoolMatrixCell({
   seriesDate,
   revealedPick,
   likelihoods,
+  priorGames,
   substitute,
 }: {
   playerName: string
@@ -26,6 +27,7 @@ export function PoolMatrixCell({
   seriesDate: string
   revealedPick?: { championId: string; rank: number } | null
   likelihoods: PickLikelihood[]
+  priorGames: number
   substitute?: boolean
 }) {
   const totalGames = pool.credible.length + pool.burned.length
@@ -68,14 +70,15 @@ export function PoolMatrixCell({
     ? likelihoods.filter((l) => poolMap.has(l.championId)).reduce((sum, l) => sum + l.probability, 0)
     : 0
 
-  // Feature explanation from pool data
+  // Feature explanation: plain role share from counts, then played/not played
   const featureExplanation = (likelihood: PickLikelihood): string => {
     const poolEntry = poolMap.get(likelihood.championId)
-    if (poolEntry) {
-      return `played ${poolEntry.games} times`
-    } else {
-      return `not played`
-    }
+    const played = poolEntry !== undefined
+    const { recent, allTime } = likelihood.roleShare ?? { recent: null, allTime: 0 }
+    const share = recent !== null ? Math.round(recent * 100) : Math.round(allTime * 100)
+    const label = recent !== null ? `recent ${role} picks` : `all ${role} picks`
+    const sharePart = `${share}% of ${label}`
+    return played ? sharePart : `${sharePart} · not played`
   }
 
   const hasReveal = revealedPick !== undefined
@@ -95,8 +98,10 @@ export function PoolMatrixCell({
   // Max probability for comfort bar
   const maxProb = top10.length > 0 ? Math.max(...top10.map((l) => l.probability)) : 0
 
-  // 7: Placeholder player — no earlier games in the data
+  // Placeholder player — no earlier games in the data
   const isPlaceholder = totalGames === 0
+  // Low-history player — fewer than 5 earlier games
+  const isLowHistory = priorGames > 0 && priorGames < 5
 
   return (
     <div className="pool-cell">
@@ -107,9 +112,11 @@ export function PoolMatrixCell({
         </span>
         <span className="pool-cell-role">{roleLabel(role)}</span>
       </div>
-      {isPlaceholder ? (
+      {isPlaceholder || isLowHistory ? (
         <div className="pool-placeholder-note">
-          <div className="pool-placeholder-text">no earlier games in the data</div>
+          <div className="pool-placeholder-text">
+            {isPlaceholder ? 'no earlier games in the data' : `${priorGames} earlier ${priorGames === 1 ? 'game' : 'games'} in the data`}
+          </div>
           {useModel && <div className="pool-placeholder-sub">list based on recent picks in this role only</div>}
         </div>
       ) : (
@@ -276,8 +283,8 @@ export function PoolMatrixCell({
         </div>
       )}
 
-      {!isPlaceholder && totalGames < 10 && (
-        <div className="pool-limited-note">limited history ({totalGames} games)</div>
+      {!isPlaceholder && !isLowHistory && priorGames < 10 && (
+        <div className="pool-limited-note">limited history ({priorGames} games)</div>
       )}
     </div>
   )
