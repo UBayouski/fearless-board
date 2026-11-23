@@ -37,7 +37,6 @@ function App() {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
   const [selectedSeries, setSelectedSeries] = useState<string | null>(null)
   const [selectedGame, setSelectedGame] = useState<number | null>(null)
-  const [seriesDraft, setSeriesDraft] = useState<SeriesDraft | null>(null)
   const [seriesError, setSeriesError] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
   const [backtestStats, setBacktestStats] = useState<{
@@ -120,13 +119,16 @@ function App() {
     loadSeries(selectedSeries).then((data) => {
       if (cancelled) return
       setSeriesWithPlans(data)
-      setSeriesDraft(data)
       setSeriesError(data ? null : 'Series not found')
     })
     return () => { cancelled = true }
   }, [selectedSeries])
 
   // The plan source: computed in full mode, read from the series file in demo mode
+  // The loaded file counts only while it is the selected series. Nothing clears it on a hash change,
+  // so choosing another game of the same series keeps the board.
+  const seriesDraft: SeriesDraft | null = seriesWithPlans?.seriesId === selectedSeries ? seriesWithPlans : null
+
   const planFor = useMemo(
     () => buildPlanFor(load, loadedModel, seriesDraft, seriesWithPlans),
     [load, loadedModel, seriesDraft, seriesWithPlans],
@@ -140,7 +142,6 @@ function App() {
         setSelectedSeries(seriesId)
         setSelectedGame(gameNumber)
         setSeriesError(null)
-        setSeriesDraft(null)
       } else {
         if (load.state === 'ready') {
           // 3: Demo mode — open on first entry of series-index.json, game 3
@@ -153,7 +154,6 @@ function App() {
               setSelectedSeries(first.seriesId)
               setSelectedGame(defaultGame)
               setSeriesError(null)
-              setSeriesDraft(null)
               return
             }
           }
@@ -192,13 +192,11 @@ function App() {
             setSelectedSeries(bestSeries.seriesId)
             setSelectedGame(3)
             setSeriesError(null)
-            setSeriesDraft(null)
             return
           }
         }
         setSelectedSeries(null)
         setSelectedGame(null)
-        setSeriesDraft(null)
         setSeriesError(null)
       }
     }
@@ -212,7 +210,6 @@ function App() {
       setSelectedSeries(seriesId)
       setSelectedGame(null)
       setSeriesError(null)
-      setSeriesDraft(null)
       setPanelOpen(false)
       setHash(seriesId, 1)
     },
