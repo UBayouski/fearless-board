@@ -230,6 +230,242 @@ export function burnedGameShare(pool: readonly PoolEntry[], burned: Set<string>)
   return Math.round((burnedGames / totalGames) * 100)
 }
 
+// ── Pick likelihood model ──────────────────────────────────────────────
+
+/** Four features for one (player, champion) candidate. */
+export interface PickFeatures {
+  recentGames: number
+  played: number
+  roleMeta: number
+  roleAllTime: number
+}
+
+/** Trained model: four weights plus standardisation parameters. */
+export interface PickModel {
+  weights: [number, number, number, number]
+  mean: [number, number, number, number]
+  sd: [number, number, number, number]
+}
+
+/** One candidate champion with its features. */
+export interface PickCandidate {
+  championId: string
+  features: PickFeatures
+}
+
+/** One training example: player, role, date, candidate list, actual pick. */
+export interface PickExample {
+  playerId: string
+  role: Role
+  seriesDate: string
+  candidates: PickCandidate[]
+  actualChampionId: string
+}
+
+/** One scored candidate after applying the model. */
+export interface PickLikelihood {
+  championId: string
+  probability: number
+  features: PickFeatures
+}
+
+/**
+ * Build features for every candidate champion for one player before one game.
+ *
+ * Candidates are every champion picked at least once in `allPicks` before
+ * `seriesDate`, minus the `burned` set. Bans are not used.
+ *
+ * `rolePicks45` and `rolePicksAll` pre-aggregate role-level counts so the
+ * function is pure and fast.
+ */
+export function pickFeatures(
+  playerId: string,
+  seriesDate: string,
+  allPicks: readonly PickRow[],
+  burned: Set<string>,
+  rolePicks45: Map<string, number>,  // championId -> count in 45-day window
+  rolePicksAll: Map<string, number>, // championId -> count all-time
+  totalRole45: number,               // N45
+  totalRoleAll: number,              // N all-time
+  allChampionIds: Set<string>,       // every champion seen before seriesDate
+): PickCandidate[] {
+  // Build per-player champion stats from earlier games
+  const playerChamp = new Map<string, { count: number; lastDays: number[] }>()
+  for (const row of allPicks) {
+    if (row.playerId !== playerId) continue
+    if (row.scheduledStart >= seriesDate) continue
+    const entry = playerChamp.get(row.championId)
+    if (!entry) {
+      const days = (Date.parse(seriesDate) - Date.parse(row.scheduledStart)) / (24 * 60 * 60 * 1000)
+      playerChamp.set(row.championId, { count: 1, lastDays: [days] })
+    } else {
+      entry.count++
+      const days = (Date.parse(seriesDate) - Date.parse(row.scheduledStart)) / (24 * 60 * 60 * 1000)
+      entry.lastDays.push(days)
+    }
+  }
+
+  const candidates: PickCandidate[] = []
+  for (const champId of allChampionIds) {
+    if (burned.has(champId)) continue
+
+    const pc = playerChamp.get(champId)
+    const played = pc ? 1 : 0
+
+    // recentGames = ln(1 + sum exp(-daysAgo/90))
+    let recentSum = 0
+    if (pc) {
+      for (const d of pc.lastDays) {
+        recentSum += Math.exp(-d / 90)
+      }
+    }
+    const recentGames = Math.log(1 + recentSum)
+
+    // roleMeta = ln((n45 + 0.5) / (N45 + 40))
+    const n45 = rolePicks45.get(champId) ?? 0
+    const roleMeta = Math.log((n45 + 0.5) / (totalRole45 + 40))
+
+    // roleAllTime = same over all earlier games
+    const nAll = rolePicksAll.get(champId) ?? 0
+    const roleAllTime = Math.log((nAll + 0.5) / (totalRoleAll + 40))
+
+    candidates.push({
+      championId: champId,
+      features: { recentGames, played, roleMeta, roleAllTime },
+    })
+  }
+
+  return candidates
+}
+
+/**
+ * Train a conditional logit model: maximise log-likelihood of the actual pick
+ * among its candidates. Full-batch gradient ascent, fixed iterations, no randomness.
+ */
+export function trainPickModel(examples: readonly PickExample[]): PickModel {
+  const K = 4 // number of features
+  const featureKeys: (keyof PickFeatures)[] = ['recentGames', 'played', 'roleMeta', 'roleAllTime']
+
+  // Compute mean and sd of features across all training candidates
+  const sums = new Array(K).fill(0)
+  const sqSums = new Array(K).fill(0)
+  let nFeatures = 0
+  for (const ex of examples) {
+    for (const cand of ex.candidates) {
+      for (let k = 0; k < K; k++) {
+        const v = cand.features[featureKeys[k]]
+        sums[k] += v
+        sqSums[k] += v * v
+      }
+      nFeatures++
+    }
+  }
+
+  const mean: number[] = sums.map((s) => nFeatures > 0 ? s / nFeatures : 0)
+  const sd: number[] = sqSums.map((s, k) => nFeatures > 0 ? Math.sqrt(s / nFeatures - mean[k] * mean[k]) : 1)
+  // Guard against zero sd
+  for (let k = 0; k < K; k++) {
+    if (sd[k] < 1e-12) sd[k] = 1
+  }
+
+  // Standardise features helper
+  const std = (v: number, k: number) => (v - mean[k]) / sd[k]
+
+  // Initialise weights to zero
+  let weights = new Array(K).fill(0)
+
+  // Full-batch gradient ascent
+  const lr = 0.5
+  const iterations = 500
+  for (let iter = 0; iter < iterations; iter++) {
+    const grad = new Array(K).fill(0)
+    let nExamples = 0
+
+    for (const ex of examples) {
+      // Softmax over candidates
+      const scores = ex.candidates.map((c) => {
+        let s = 0
+        for (let k = 0; k < K; k++) {
+          s += weights[k] * std(c.features[featureKeys[k]], k)
+        }
+        return s
+      })
+
+      // Numerical stability: subtract max
+      const maxScore = Math.max(...scores)
+      const exps = scores.map((s) => Math.exp(s - maxScore))
+      const sumExps = exps.reduce((a, b) => a + b, 0)
+      const probs = exps.map((e) => e / sumExps)
+
+      // Find actual pick index
+      const actualIdx = ex.candidates.findIndex((c) => c.championId === ex.actualChampionId)
+      if (actualIdx < 0) continue // skip if actual not in candidates
+
+      // Gradient of log-likelihood: x_actual - sum(p_j * x_j)
+      // (gradient ascent on log-likelihood = gradient descent on NLL)
+      for (let k = 0; k < K; k++) {
+        let g = 0
+        for (let j = 0; j < ex.candidates.length; j++) {
+          const x = std(ex.candidates[j].features[featureKeys[k]], k)
+          g -= probs[j] * x
+        }
+        // Add actual pick's feature (positive contribution)
+        g += std(ex.candidates[actualIdx].features[featureKeys[k]], k)
+        grad[k] += g
+      }
+      nExamples++
+    }
+
+    if (nExamples === 0) break
+
+    // Update weights (gradient ascent on log-likelihood)
+    for (let k = 0; k < K; k++) {
+      weights[k] += lr * grad[k] / nExamples
+    }
+  }
+
+  return {
+    weights: weights as [number, number, number, number],
+    mean: mean as [number, number, number, number],
+    sd: sd as [number, number, number, number],
+  }
+}
+
+/**
+ * Score candidates with the trained model and return softmax probabilities, sorted desc.
+ */
+export function pickLikelihoods(model: PickModel, candidates: PickCandidate[]): PickLikelihood[] {
+  if (candidates.length === 0) return []
+
+  const K = 4
+  const featureKeys: (keyof PickFeatures)[] = ['recentGames', 'played', 'roleMeta', 'roleAllTime']
+
+  const scored = candidates.map((c) => {
+    let score = 0
+    for (let k = 0; k < K; k++) {
+      const v = (c.features[featureKeys[k]] - model.mean[k]) / model.sd[k]
+      score += model.weights[k] * v
+    }
+    return { championId: c.championId, score, features: c.features }
+  })
+
+  // Softmax
+  const maxScore = Math.max(...scored.map((s) => s.score))
+  const exps = scored.map((s) => Math.exp(s.score - maxScore))
+  const sumExps = exps.reduce((a, b) => a + b, 0)
+
+  const result: PickLikelihood[] = scored.map((s, i) => ({
+    championId: s.championId,
+    probability: exps[i] / sumExps,
+    features: s.features,
+  }))
+
+  // Sort by probability descending
+  result.sort((a, b) => b.probability - a.probability)
+
+  return result
+}
+
 /** Backtest result for a single game. */
 export interface BacktestGame {
   seriesId: string
@@ -266,6 +502,62 @@ export interface BacktestSummary {
   totalPicks: number
   /** Total picks from players with >= 20 prior games. */
   totalPicks20: number
+}
+
+/**
+ * Evaluate the "games played" ranking (the board's ranking) on a set of examples.
+ * Uses playerPool + crediblePool: only champions the player has played, sorted by
+ * games desc then recency desc. Champions not played are misses.
+ */
+export function evaluateGamesPlayed(
+  seriesList: readonly SeriesDraft[],
+  picks: readonly PickRow[],
+): { top1: number; top3: number; top5: number; top10: number; picks: number; picks20: number; top1_20: number; top3_20: number; top5_20: number; top10_20: number } {
+  let top1 = 0, top3 = 0, top5 = 0, top10 = 0
+  let top1_20 = 0, top3_20 = 0, top5_20 = 0, top10_20 = 0
+  let totalPicks = 0, totalPicks20 = 0
+
+  for (const series of seriesList) {
+    for (const game of series.games) {
+      const burned = burnedChampions(series.games, game.gameNumber)
+
+      for (const pick of game.picks) {
+        const pool = playerPool(picks, pick.playerId, series.scheduledStart)
+        const { credible } = crediblePool(pool, burned)
+        const rank = credible.findIndex((e) => e.championId === pick.championId) + 1
+        const priorGames = pool.reduce((sum, e) => sum + e.games, 0)
+
+        totalPicks++
+        if (rank >= 1 && rank <= 1) top1++
+        if (rank >= 1 && rank <= 3) top3++
+        if (rank >= 1 && rank <= 5) top5++
+        if (rank >= 1 && rank <= 10) top10++
+
+        if (priorGames >= 20) {
+          totalPicks20++
+          if (rank >= 1 && rank <= 1) top1_20++
+          if (rank >= 1 && rank <= 3) top3_20++
+          if (rank >= 1 && rank <= 5) top5_20++
+          if (rank >= 1 && rank <= 10) top10_20++
+        }
+      }
+    }
+  }
+
+  const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 1000) / 10 : 0
+
+  return {
+    top1: pct(top1, totalPicks),
+    top3: pct(top3, totalPicks),
+    top5: pct(top5, totalPicks),
+    top10: pct(top10, totalPicks),
+    picks: totalPicks,
+    picks20: totalPicks20,
+    top1_20: pct(top1_20, totalPicks20),
+    top3_20: pct(top3_20, totalPicks20),
+    top5_20: pct(top5_20, totalPicks20),
+    top10_20: pct(top10_20, totalPicks20),
+  }
 }
 
 /**

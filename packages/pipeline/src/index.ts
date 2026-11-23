@@ -1,10 +1,10 @@
 // Builds the aggregate JSON the app loads, from a local clone of the hackathon data repo.
 // The data repo lives next to this project, never inside it (see README).
-import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow } from '@fearless-board/shared'
-import { backtest } from '@fearless-board/shared'
+import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, PickModel, PickExample } from '@fearless-board/shared'
+import { backtest, pickFeatures, trainPickModel, pickLikelihoods, burnedChampions, playerPool, crediblePool } from '@fearless-board/shared'
 import {
   parseCSV,
   type GameRow,
@@ -715,10 +715,11 @@ for (const draft of drafts) {
   }
 }
 
-// Section 5: Backtest
+// ── Section 5: Backtest ────────────────────────────────────────────────
+
 console.log('Running backtest...')
 
-// Build PickRow array from all drafts (for backtest, we need all picks including those in the current series)
+// Build PickRow array from all drafts
 const allPicks: PickRow[] = []
 for (const draft of drafts) {
   for (const game of draft.games) {
@@ -739,12 +740,296 @@ for (const draft of drafts) {
 
 const { games: backtestGames, summary: backtestSummary } = backtest(drafts, allPicks)
 
-// Write backtest.json (summary only, per-game data is too large)
+// ── Section 2: Pick likelihood model ──────────────────────────────────
+
+console.log('Building pick likelihood model...')
+
+const splitDate = '2026-01-01'
+
+// ── Optimization: index picks by player once ──────────────────────────
+
+// Index: playerId -> PickRow[] sorted by scheduledStart
+const picksByPlayer = new Map<string, PickRow[]>()
+for (const p of allPicks) {
+  let list = picksByPlayer.get(p.playerId)
+  if (!list) {
+    list = []
+    picksByPlayer.set(p.playerId, list)
+  }
+  list.push(p)
+}
+for (const [, list] of picksByPlayer) {
+  list.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart))
+}
+
+// ── Build examples once for all series ────────────────────────────────
+
+// For each series, pre-compute: allChampionIds, roleCounts, rolePicks45/All per role
+// Then build examples for every game in every series
+
+interface SeriesMeta {
+  allChampionIds: Set<string>
+  rolePicks45: Map<Role, Map<string, number>>
+  rolePicksAll: Map<Role, Map<string, number>>
+  totalRole45: Map<Role, number>
+  totalRoleAll: Map<Role, number>
+}
+
+const seriesMeta = new Map<string, SeriesMeta>()
+const allExamplesList: { example: PickExample; seriesDate: string; gameNumber: number; priorGames: number }[] = []
+
+for (const draft of drafts) {
+  const seriesDate = draft.scheduledStart
+
+  // Build allChampionIds: every champion picked in any series before this one
+  const allChampionIds = new Set<string>()
+  for (const p of allPicks) {
+    if (p.scheduledStart < seriesDate) {
+      allChampionIds.add(p.championId)
+    }
+  }
+
+  // Skip if fewer than 80 champions have appeared (per spec)
+  if (allChampionIds.size < 80) {
+    seriesMeta.set(draft.seriesId, { allChampionIds, rolePicks45: new Map(), rolePicksAll: new Map(), totalRole45: new Map(), totalRoleAll: new Map() })
+    continue
+  }
+
+  // Build role-level pick counts for this series
+  const cutoff45 = Date.parse(seriesDate) - 45 * 24 * 60 * 60 * 1000
+  const rolePicks45Map = new Map<Role, Map<string, number>>()
+  const rolePicksAllMap = new Map<Role, Map<string, number>>()
+  const totalRole45Map = new Map<Role, number>()
+  const totalRoleAllMap = new Map<Role, number>()
+
+  for (const role of ['top', 'jungle', 'mid', 'bot', 'support'] as Role[]) {
+    const p45 = new Map<string, number>()
+    const pAll = new Map<string, number>()
+    let t45 = 0, tAll = 0
+
+    for (const p of allPicks) {
+      if (p.scheduledStart >= seriesDate) continue
+      const pr = playerRole.get(p.playerId)
+      if (pr !== role) continue
+
+      const c = p.championId
+      pAll.set(c, (pAll.get(c) ?? 0) + 1)
+      tAll++
+      if (Date.parse(p.scheduledStart) >= cutoff45) {
+        p45.set(c, (p45.get(c) ?? 0) + 1)
+        t45++
+      }
+    }
+
+    rolePicks45Map.set(role, p45)
+    rolePicksAllMap.set(role, pAll)
+    totalRole45Map.set(role, t45)
+    totalRoleAllMap.set(role, tAll)
+  }
+
+  seriesMeta.set(draft.seriesId, { allChampionIds, rolePicks45: rolePicks45Map, rolePicksAll: rolePicksAllMap, totalRole45: totalRole45Map, totalRoleAll: totalRoleAllMap })
+
+  // For each game in this series, build examples for each pick
+  for (const game of draft.games) {
+    const burned = burnedChampions(draft.games, game.gameNumber)
+
+    for (const pick of game.picks) {
+      const role = playerRole.get(pick.playerId)
+      if (!role) continue
+
+      const meta = seriesMeta.get(draft.seriesId)
+      if (!meta) continue
+
+      const candidates = pickFeatures(
+        pick.playerId,
+        seriesDate,
+        allPicks,
+        burned,
+        meta.rolePicks45.get(role) ?? new Map(),
+        meta.rolePicksAll.get(role) ?? new Map(),
+        meta.totalRole45.get(role) ?? 0,
+        meta.totalRoleAll.get(role) ?? 0,
+        allChampionIds,
+      )
+
+      if (candidates.length === 0) continue
+
+      // Count prior games for this player
+      const playerPicks = picksByPlayer.get(pick.playerId) ?? []
+      let priorGames = 0
+      for (const pp of playerPicks) {
+        if (pp.scheduledStart < seriesDate) priorGames++
+      }
+
+      allExamplesList.push({
+        example: {
+          playerId: pick.playerId,
+          role,
+          seriesDate,
+          candidates,
+          actualChampionId: pick.championId,
+        },
+        seriesDate,
+        gameNumber: game.gameNumber,
+        priorGames,
+      })
+    }
+  }
+}
+
+// Split examples at the split date
+const trainExamples = allExamplesList.filter(e => e.seriesDate < splitDate).map(e => e.example)
+const evalExamples = allExamplesList.filter(e => e.seriesDate >= splitDate)
+
+console.log(`  Training examples: ${trainExamples.length}`)
+console.log(`  Evaluation examples: ${evalExamples.length}`)
+
+// Train model on pre-2026 data
+console.log('  Training model...')
+const trainStart = performance.now()
+const evalModel = trainPickModel(trainExamples)
+const trainElapsed = ((performance.now() - trainStart) / 1000).toFixed(1)
+console.log(`  Training time: ${trainElapsed}s`)
+console.log(`  Weights: [${evalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
+
+// ── Evaluate model on 2026+ data ──────────────────────────────────────
+
+function evaluateModelOnExamples(model: PickModel, examples: typeof evalExamples) {
+  const groups: {
+    name: string
+    picks: number
+    model: { top1: number; top3: number; top5: number; top10: number }
+    gamesPlayed: { top1: number; top3: number; top5: number; top10: number }
+  }[] = []
+
+  // Three groups: (1) all eval picks, (2) games 2+, (3) games 2+ with 20+ prior games
+  type GroupFilter = (e: typeof evalExamples[0]) => boolean
+  const groupDefs: { name: string; filter: GroupFilter }[] = [
+    { name: 'all', filter: () => true },
+    { name: 'games 2+', filter: e => e.gameNumber >= 2 },
+    { name: 'games 2+, 20+ prior games', filter: e => e.gameNumber >= 2 && e.priorGames >= 20 },
+  ]
+
+  for (const { name, filter } of groupDefs) {
+    const filtered = examples.filter(filter)
+    if (filtered.length === 0) continue
+
+    let top1 = 0, top3 = 0, top5 = 0, top10 = 0
+    let gpTop1 = 0, gpTop3 = 0, gpTop5 = 0, gpTop10 = 0
+
+    for (const item of filtered) {
+      const { example } = item
+
+      // Model evaluation
+      const likelihoods = pickLikelihoods(model, example.candidates)
+      const actualRank = likelihoods.findIndex(l => l.championId === example.actualChampionId) + 1
+
+      if (actualRank >= 1 && actualRank <= 1) top1++
+      if (actualRank >= 1 && actualRank <= 3) top3++
+      if (actualRank >= 1 && actualRank <= 5) top5++
+      if (actualRank >= 1 && actualRank <= 10) top10++
+
+      // Games played evaluation: use playerPool + crediblePool (board's ranking)
+      const pool = playerPool(allPicks, example.playerId, example.seriesDate)
+      const series = drafts.find(d => d.scheduledStart === example.seriesDate)
+      if (series) {
+        const game = series.games.find(g => g.gameNumber === item.gameNumber)
+        if (game) {
+          const burned = burnedChampions(series.games, game.gameNumber)
+          const { credible: cred } = crediblePool(pool, burned)
+          const gpRank = cred.findIndex((e) => e.championId === example.actualChampionId) + 1
+
+          if (gpRank >= 1 && gpRank <= 1) gpTop1++
+          if (gpRank >= 1 && gpRank <= 3) gpTop3++
+          if (gpRank >= 1 && gpRank <= 5) gpTop5++
+          if (gpRank >= 1 && gpRank <= 10) gpTop10++
+        }
+      }
+    }
+
+    const n = filtered.length
+    const pct = (v: number) => Math.round(v / n * 1000) / 10
+
+    groups.push({
+      name,
+      picks: n,
+      model: { top1: pct(top1), top3: pct(top3), top5: pct(top5), top10: pct(top10) },
+      gamesPlayed: { top1: pct(gpTop1), top3: pct(gpTop3), top5: pct(gpTop5), top10: pct(gpTop10) },
+    })
+  }
+
+  return groups
+}
+
+const modelGroups = evaluateModelOnExamples(evalModel, evalExamples)
+
+console.log('\n  Model evaluation (2026+ games):')
+for (const g of modelGroups) {
+  console.log(`  ${g.name} (${g.picks} picks):`)
+  console.log(`    Model       — Top 1: ${g.model.top1}%, Top 3: ${g.model.top3}%, Top 5: ${g.model.top5}%, Top 10: ${g.model.top10}%`)
+  console.log(`    Games played — Top 1: ${g.gamesPlayed.top1}%, Top 3: ${g.gamesPlayed.top3}%, Top 5: ${g.gamesPlayed.top5}%, Top 10: ${g.gamesPlayed.top10}%`)
+}
+
+// Train final model on all data
+console.log('\n  Training final model on all data...')
+const allExamples = allExamplesList.map(e => e.example)
+console.log(`  All examples: ${allExamples.length}`)
+const finalModel = trainPickModel(allExamples)
+console.log(`  Final weights: [${finalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
+
+// Write model.json
+writeFileSync(resolve(outputDir, 'model.json'), JSON.stringify(finalModel))
+
+// ── Write series files with roleCounts and championsSeen ──────────────
+
+console.log('Writing series files with role counts...')
+for (const draft of drafts) {
+  const meta = seriesMeta.get(draft.seriesId)
+  if (!meta) continue
+
+  // Build roleCounts object for this series
+  const roleCountsObj: Record<string, { total45: number; totalAll: number; champions: Record<string, [number, number]> }> = {}
+  for (const role of ['top', 'jungle', 'mid', 'bot', 'support'] as Role[]) {
+    const p45 = meta.rolePicks45.get(role)
+    const pAll = meta.rolePicksAll.get(role)
+    if (!p45 && !pAll) continue
+
+    const champsObj: Record<string, [number, number]> = {}
+    // Merge champions from both maps
+    const allChampIds = new Set<string>()
+    if (p45) for (const c of p45.keys()) allChampIds.add(c)
+    if (pAll) for (const c of pAll.keys()) allChampIds.add(c)
+    for (const champId of allChampIds) {
+      const n45 = p45?.get(champId) ?? 0
+      const nAll = pAll?.get(champId) ?? 0
+      champsObj[champId] = [n45, nAll]
+    }
+    roleCountsObj[role] = {
+      total45: meta.totalRole45.get(role) ?? 0,
+      totalAll: meta.totalRoleAll.get(role) ?? 0,
+      champions: champsObj,
+    }
+  }
+
+  // Read existing series file and augment it
+  const file = resolve(outputDir, `${draft.seriesId}.json`)
+  const existing = JSON.parse(readFileSync(file, 'utf-8'))
+  existing.roleCounts = roleCountsObj
+  existing.championsSeen = [...meta.allChampionIds]
+
+  writeFileSync(file, JSON.stringify(existing))
+}
+
+// Write backtest.json with model results
 const backtestOutput = {
   generatedAt: new Date().toISOString(),
   seriesCount: drafts.length,
   gameCount: backtestGames.length,
   summary: backtestSummary,
+  model: {
+    split: splitDate,
+    groups: modelGroups,
+  },
 }
 writeFileSync(resolve(outputDir, 'backtest.json'), JSON.stringify(backtestOutput))
 
@@ -770,5 +1055,12 @@ console.log(`  In top 5: ${backtestSummary.inTop5}%`)
 console.log(`  In pool (20+): ${backtestSummary.inPool20}%`)
 console.log(`  In top 3 (20+): ${backtestSummary.inTop320}%`)
 console.log(`  In top 5 (20+): ${backtestSummary.inTop520}%`)
+console.log(`\nModel (2026+ evaluation):`)
+console.log(`  Weights: [${evalModel.weights.map(w => w.toFixed(4)).join(', ')}]`)
+for (const g of modelGroups) {
+  console.log(`  ${g.name} (${g.picks} picks):`)
+  console.log(`    Model       — Top 1: ${g.model.top1}%, Top 3: ${g.model.top3}%, Top 5: ${g.model.top5}%, Top 10: ${g.model.top10}%`)
+  console.log(`    Games played — Top 1: ${g.gamesPlayed.top1}%, Top 3: ${g.gamesPlayed.top3}%, Top 5: ${g.gamesPlayed.top5}%, Top 10: ${g.gamesPlayed.top10}%`)
+}
 console.log(`  Run time: ${elapsed}s`)
 console.log(`  Written to: ${outputDir}`)

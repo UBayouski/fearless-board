@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft } from './index.ts'
+import { burnedChampions, decodeCompactPicks, playerPool, crediblePool, burnedGameShare, backtest, pickFeatures, trainPickModel, pickLikelihoods, type DraftAction, type GameDraft, type CompactPicks, type PickRow, type PoolEntry, type SeriesDraft, type Role, type PickCandidate, type PickExample } from './index.ts'
 
 const action = (order: number, type: DraftAction['type'], teamId: string, championId: string): DraftAction => ({
   order,
@@ -331,4 +331,105 @@ test('backtest skips game 1', () => {
   const { games } = backtest([series], picks)
   assert.equal(games.length, 1)
   assert.equal(games[0].gameNumber, 2)
+})
+
+// ── Pick model tests ──────────────────────────────────────────────────
+
+test('pickLikelihoods: probabilities sum to 1', () => {
+  const candidates: PickCandidate[] = [
+    { championId: 'c1', features: { recentGames: 1, played: 1, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c3', features: { recentGames: 0.5, played: 1, roleMeta: 0, roleAllTime: 0 } },
+  ]
+  const model = trainPickModel([])
+  const likelihoods = pickLikelihoods(model, candidates)
+  assert.equal(likelihoods.length, 3)
+  const sum = likelihoods.reduce((s, l) => s + l.probability, 0)
+  assert.ok(Math.abs(sum - 1) < 1e-6, `probabilities sum to 1, got ${sum}`)
+})
+
+test('pickLikelihoods: sorted by probability descending', () => {
+  // Train on examples where c1 (high recentGames + played) always wins over c2
+  const examples: PickExample[] = []
+  for (let i = 0; i < 200; i++) {
+    examples.push({
+      playerId: 'p1',
+      role: 'mid' as Role,
+      seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 2, played: 1, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c3', features: { recentGames: 0.3, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+  const candidates: PickCandidate[] = [
+    { championId: 'c1', features: { recentGames: 2, played: 1, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c2', features: { recentGames: 0, played: 0, roleMeta: 0, roleAllTime: 0 } },
+    { championId: 'c3', features: { recentGames: 0.3, played: 0, roleMeta: 0, roleAllTime: 0 } },
+  ]
+  const likelihoods = pickLikelihoods(model, candidates)
+  assert.ok(likelihoods[0].probability >= likelihoods[1].probability, 'sorted desc')
+  assert.equal(likelihoods[0].championId, 'c1', 'c1 should be most likely')
+})
+
+test('pickFeatures: burned champions never appear', () => {
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),
+    pickRow('2025-01-02', 's0b', 1, 'tA', 'p1', 'c2', true),
+  ]
+  const burned = new Set(['c1'])
+  const allChamps = new Set(['c1', 'c2', 'c3'])
+  const rolePicks45 = new Map<string, number>()
+  const rolePicksAll = new Map<string, number>()
+
+  const candidates = pickFeatures('p1', '2025-02-01', picks, burned, rolePicks45, rolePicksAll, 0, 0, allChamps)
+  const champIds = candidates.map((c) => c.championId)
+  assert.ok(!champIds.includes('c1'), 'burned c1 should not appear')
+  assert.ok(champIds.includes('c2'), 'c2 should appear')
+  assert.ok(champIds.includes('c3'), 'c3 should appear')
+})
+
+test('trainPickModel: deciding feature gets largest weight', () => {
+  // In this fixture, "played" is the only feature that differs between the actual pick and the other
+  const examples: PickExample[] = []
+  for (let i = 0; i < 100; i++) {
+    examples.push({
+      playerId: 'p1',
+      role: 'mid' as Role,
+      seriesDate: '2025-03-01',
+      candidates: [
+        { championId: 'c1', features: { recentGames: 0.5, played: 1, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c2', features: { recentGames: 0.5, played: 0, roleMeta: 0, roleAllTime: 0 } },
+        { championId: 'c3', features: { recentGames: 0.5, played: 0, roleMeta: 0, roleAllTime: 0 } },
+      ],
+      actualChampionId: 'c1',
+    })
+  }
+  const model = trainPickModel(examples)
+  // played is index 1; it should have the largest absolute weight
+  const absWeights = model.weights.map((w) => Math.abs(w))
+  const maxIdx = absWeights.indexOf(Math.max(...absWeights))
+  assert.equal(maxIdx, 1, 'played (index 1) should have the largest weight')
+})
+
+test('pickFeatures: later series does not affect earlier series', () => {
+  const picks: PickRow[] = [
+    pickRow('2025-01-01', 's0', 1, 'tA', 'p1', 'c1', true),
+    pickRow('2025-06-01', 's1', 1, 'tA', 'p1', 'c2', true), // later series
+  ]
+  const burned = new Set<string>()
+  const allChamps = new Set(['c1', 'c2'])
+  const rolePicks45 = new Map<string, number>()
+  const rolePicksAll = new Map<string, number>()
+
+  // Features for series on 2025-03-01 should only see the Jan pick
+  const candidates = pickFeatures('p1', '2025-03-01', picks, burned, rolePicks45, rolePicksAll, 0, 0, allChamps)
+  const c1Feat = candidates.find((c) => c.championId === 'c1')
+  const c2Feat = candidates.find((c) => c.championId === 'c2')
+  assert.ok(c1Feat !== undefined, 'c1 should be in candidates')
+  assert.equal(c1Feat!.features.played, 1, 'c1 was played before 2025-03-01')
+  assert.equal(c2Feat!.features.played, 0, 'c2 was not played before 2025-03-01 (later series)')
 })
