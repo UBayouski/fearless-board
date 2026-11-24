@@ -194,9 +194,10 @@ did not trigger, and it is off under `prefers-reduced-motion`.
 - **The forecast strip on reveal, and the sentence about it, appear from a 1,320 px window** (about 600 px
   per lane).
 - **Bans on a ban turn:** the side column switches to the team that is banning and lists six rows.
-- **Not done yet:** the note headline change and regenerating the notes (item 3 below); checking the Riot
-  notice word for word against Riot's page (item 5; the footer text was written from memory of the standard
-  notice); a contrast measurement; a keyboard-only and a screen-reader pass.
+- **Riot notice:** the footer text matches the wording on Riot's general developer policies page, checked on
+  2026-11-23 (the League docs page words it slightly differently; the general page is the one the hackathon
+  rules point to).
+- **Not done yet:** the note headline change and regenerating the notes (item 3 below); a contrast measurement; a keyboard-only and a screen-reader pass.
 
 ## Build steps
 
