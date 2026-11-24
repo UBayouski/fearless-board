@@ -321,6 +321,7 @@ export function SeriesBoard({
             <summary>Compare with forecasts</summary>
             <div className="inner">
               <Board
+                labelSuffix=", compared with forecasts"
                 plan={plan}
                 teamIds={draft.teamIds}
                 activeRole={activeRole}

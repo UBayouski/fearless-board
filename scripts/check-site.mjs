@@ -42,6 +42,14 @@ for (const f of files.filter((name) => name.endsWith('.js'))) {
   if (/AIza[0-9A-Za-z_-]{20,}|RGAPI-|GEMINI_API_KEY/.test(text)) fail(`${f} contains something that looks like an API key`)
 }
 
+// The manifest's note count matches the notes on the site
+const manifest = JSON.parse(readFileSync(resolve(site, 'data/manifest.json'), 'utf8'))
+let noteCount = 0
+for (const f of files.filter((name) => name.startsWith('data/notes/'))) {
+  for (const game of Object.values(JSON.parse(readFileSync(resolve(site, f), 'utf8')).games)) noteCount += Object.keys(game).length
+}
+if ((manifest.notes?.count ?? 0) !== noteCount) fail(`manifest says ${manifest.notes?.count ?? 0} notes, the site has ${noteCount}`)
+
 const size = files.reduce((sum, f) => sum + statSync(resolve(site, f)).size, 0)
 if (errors > 0) {
   console.error(`\n${errors} check(s) failed. The site build is not safe to deploy.`)

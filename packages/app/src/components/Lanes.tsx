@@ -27,15 +27,18 @@ export function Board({
   activeRole,
   onRole,
   lane,
+  labelSuffix = '',
 }: {
   plan: GamePlan
   teamIds: [string, string]
   activeRole: Row
   onRole: (role: Row) => void
   lane: (player: GamePlanPlayer, teamId: string, side: Side, index: number) => ReactNode
+  /** Added to each role's region name, so a second board on the page has its own names. */
+  labelSuffix?: string
 }) {
   const rows: Row[] = plan.unknownRolePlayers.some(([, players]) => players.length > 0) ? [...ROLES, 'unknown'] : [...ROLES]
-  const label = (row: Row) => (row === 'unknown' ? 'role unknown' : row)
+  const label = (row: Row) => (row === 'unknown' ? 'role unknown' : row) + labelSuffix
   const cell = (row: Row, t: 0 | 1, i: number) => {
     const side: Side = t === 0 ? 'left' : 'right'
     const player = playerAt(plan, teamIds[t], row)

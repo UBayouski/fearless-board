@@ -262,7 +262,7 @@ function App() {
     <UiContext.Provider value={ui}>
       <main className="wrap">
         <div className="top">
-          <div className="wordmark">FEARLESS <span>BOARD</span></div>
+          <h1 className="wordmark">FEARLESS <span>BOARD</span></h1>
           <div className="selector" ref={panelRef}>
             <button
               ref={seriesSelectorRef}

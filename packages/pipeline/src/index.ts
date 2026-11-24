@@ -1,6 +1,6 @@
 // Builds the aggregate JSON the app loads, from a local clone of the hackathon data repo.
 // The data repo lives next to this project, never inside it (see README).
-import { existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, CalibrationBin } from '@fearless-board/shared'
@@ -658,8 +658,14 @@ const manifest: Manifest = {
 const notesDir = resolve(outputDir, 'notes')
 if (existsSync(notesDir)) {
   const notesFiles = readdirSync(notesDir).filter((f: string) => f.endsWith('.json'))
-  if (notesFiles.length > 0) {
-    manifest.notes = { model: 'gemini-3.8-flash', count: notesFiles.length }
+  // The count is of notes (one per team and game), as in the demo build, not of series files
+  let noteCount = 0
+  for (const f of notesFiles) {
+    const file = JSON.parse(readFileSync(resolve(notesDir, f), 'utf8')) as { games: Record<string, Record<string, unknown>> }
+    for (const game of Object.values(file.games)) noteCount += Object.keys(game).length
+  }
+  if (noteCount > 0) {
+    manifest.notes = { model: 'gemini-3.8-flash', count: noteCount }
   }
 }
 

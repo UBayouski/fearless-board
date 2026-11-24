@@ -69,7 +69,7 @@ export interface Manifest {
   teams: TeamRef[]
   champions: ChampionRef[]
   players: PlayerRef[]
-  /** Optional: notes model info, set by pnpm data:notes or preserved by pnpm data. */
+  /** Optional: notes model and number of notes (one per team and game), set by pnpm data and the site and demo builds. */
   notes?: { model: string; count: number }
   /** "demo" for the demo build; absent for the full build. */
   mode?: 'demo'

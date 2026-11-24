@@ -9,7 +9,7 @@ button:focus-visible, summary:focus-visible, h2:focus-visible { outline: 3px sol
 
 /* Top bar */
 .top { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 12px 0; }
-.wordmark { font: 800 22px/1 var(--display); letter-spacing: .02em; }
+.wordmark { font: 800 22px/1 var(--display); letter-spacing: .02em; margin: 0; }
 .wordmark span { color: var(--ember); }
 .grow { flex: 1; }
 .ghost { background: transparent; border: 1px solid var(--line); border-radius: var(--radius); padding: 0 14px; min-height: 40px; font-size: 14px; font-weight: 600; }

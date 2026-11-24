@@ -70,18 +70,19 @@ export function SeriesPicker({
       <div className="picker-controls">
         <input
           type="text"
+          aria-label="Search teams or events"
           placeholder="Search teams or events…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
+        <select aria-label="Team" value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}>
           <option value="">All teams</option>
           {teamIds.map((tid) => {
             const t = teamMap.get(tid)
             return <option key={tid} value={tid}>{t?.name ?? tid}</option>
           })}
         </select>
-        <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
+        <select aria-label="Event" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
           <option value="">All events</option>
           {eventSet.map((ev) => <option key={ev} value={ev}>{ev}</option>)}
         </select>

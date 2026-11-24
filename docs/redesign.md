@@ -182,6 +182,8 @@ did not trigger, and it is off under `prefers-reduced-motion`.
 - Built by Claude directly, not through Junie.
 - Icons are on by default (`ICONS_DEFAULT` in `App.tsx`); the visitor's choice is remembered. Before the
   demo is hosted the project must be registered on Riot's Developer Portal, or the default set to names only.
+  Done: registered and approved on 2026-11-23 (App ID 912237, League of Legends, no API key used), before the
+  site went live.
 - The app opens on the last game of the default series (game 5 for the default series).
 
 ## As built: where the app differs from this document
@@ -209,7 +211,13 @@ did not trigger, and it is off under `prefers-reduced-motion`.
   the first pick at 390 px, was 457 px and not sticky. A pick or a ban from a list moves the focus to Undo, because the
   control that was used disappears. An icon that cannot be loaded is replaced by the champion's name where the icon
   stands in for the name (burn track, forecast strip).
-- **Not done yet:** a screen-reader pass.
+- **Accessibility tree (2026-11-23):** read from the browser in planning, practice draft, reveal with the comparison
+  open, and the series list. Every control has a name, every icon that stands for a name has a text alternative,
+  the turn line is a live status region, and the side column is a named landmark. Fixed on the way: the team and
+  event filters and the series search had no names; the page had no level-1 heading (the wordmark is now `h1`); the
+  comparison board repeated the role region names of the board above it (now "top, compared with forecasts").
+- **Not done yet:** listening with a real screen reader (NVDA or Narrator). The tree above is what it reads from, so
+  this checks wording and order rather than missing names.
 
 ## Build steps
 
