@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { SeriesDraft, GameDraft, PlayerPick, Side, DraftAction, Manifest, SeriesIndexEntry, CompactPicks, Role, PickRow, CalibrationBin } from '@fearless-board/shared'
 import { backtest, burnedChampions, calibrateModel, pickFeatures } from '@fearless-board/shared'
+import { championIcon, DDRAGON_VERSION } from './championIcon.ts'
 import { printModelGroups, trainAndEvaluate } from './model.ts'
 import { runBacktests } from './backtests.ts'
 import {
@@ -646,7 +647,8 @@ const manifest: Manifest = {
   seriesCount: drafts.length,
   gameCount: totalGames,
   teams: [...teamRefMap.entries()].map(([id, name]) => ({ id, name })),
-  champions: [...championRefMap.entries()].map(([id, name]) => ({ id, name })),
+  champions: [...championRefMap.entries()].map(([id, name]) => ({ id, name, icon: championIcon(name) })),
+  ddragon: DDRAGON_VERSION,
   players: [...playerRefMap.entries()].map(([id, name]) => ({
     id, name, role: playerRole.get(id) ?? null,
   })),

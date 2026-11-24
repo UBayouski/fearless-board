@@ -146,6 +146,7 @@ const demoManifest: Manifest = {
   gameCount: manifest.gameCount,
   teams: manifest.teams.filter(t => featuredTeamIds.has(t.id)),
   champions: manifest.champions, // all champions (lists refer to them)
+  ddragon: manifest.ddragon,
   players: manifest.players.filter(p => featuredPlayerIds.has(p.id)),
   notes: manifest.notes && notesCopied > 0 ? { model: manifest.notes.model, count: notesCopied } : undefined,
   mode: 'demo',

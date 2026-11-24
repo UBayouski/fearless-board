@@ -5,7 +5,30 @@ import { buildPlanFor, dataUrl, loadAll, loadSeries } from './data'
 import { parseHash, setHash } from './route'
 import { SeriesPicker } from './components/SeriesPicker'
 import { SeriesBoard } from './components/SeriesBoard'
+import { UiContext } from './ui'
 import './index.css'
+
+type Theme = 'light' | 'dark'
+
+/** A setting the visitor chose earlier; storage can be unavailable (private windows), so every access is guarded. */
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function store(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // The choice then lasts for this visit only
+  }
+}
+
+/** Champion icons are on unless the visitor turned them off. Names only requests nothing from Riot's server. */
+const ICONS_DEFAULT = true
 
 // 3.5: Load notes only if manifest says notes exist
 async function loadNotes(seriesId: string, manifestNotes?: { model: string; count: number }) {
@@ -35,6 +58,20 @@ async function loadBacktest() {
 
 function App() {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
+  // The first visit follows the system setting; after that the visitor's choice is kept
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = stored('fearless-board:theme')
+    if (saved === 'light' || saved === 'dark') return saved
+    return typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+  const [icons, setIcons] = useState<boolean>(() => {
+    const saved = stored('fearless-board:icons')
+    return saved === null ? ICONS_DEFAULT : saved === 'on'
+  })
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.dataset.icons = icons ? 'on' : 'off'
+  }, [theme, icons])
   const [selectedSeries, setSelectedSeries] = useState<string | null>(null)
   const [selectedGame, setSelectedGame] = useState<number | null>(null)
   const [seriesError, setSeriesError] = useState<string | null>(null)
@@ -150,7 +187,7 @@ function App() {
             // The newest series that went to five games, as in the full build; else the newest
             const first = load.index.find((e) => e.gameCount === 5) ?? load.index[0]
             if (first) {
-              const defaultGame = first.gameCount >= 3 ? 3 : first.gameCount >= 2 ? 2 : 1
+              const defaultGame = first.gameCount
               setHash(first.seriesId, defaultGame)
               setSelectedSeries(first.seriesId)
               setSelectedGame(defaultGame)
@@ -189,9 +226,9 @@ function App() {
             }
           }
           if (bestSeries) {
-            setHash(bestSeries.seriesId, 3)
+            setHash(bestSeries.seriesId, bestSeries.gameCount)
             setSelectedSeries(bestSeries.seriesId)
-            setSelectedGame(3)
+            setSelectedGame(bestSeries.gameCount)
             setSeriesError(null)
             return
           }
@@ -228,8 +265,8 @@ function App() {
 
   if (load.state !== 'ready') {
     return (
-      <main>
-        <h1>Fearless Board</h1>
+      <main className="loading">
+        <div className="wordmark">FEARLESS <span>BOARD</span></div>
         <p>Series-long draft planning for Fearless Draft.</p>
         {load.state === 'loading' && <p>Loading draft data…</p>}
         {load.state === 'missing' && (
@@ -249,55 +286,62 @@ function App() {
       ? 'Select series'
       : 'Select series'
 
-  return (
-    <main>
-      {/* ── Header with series selector ─────────────────────── */}
-      <div className="board-header">
-        <h1>Fearless Board</h1>
-        <div style={{ position: 'relative' }} ref={panelRef}>
-          <button
-            ref={seriesSelectorRef}
-            type="button"
-            className="series-selector-btn"
-            aria-expanded={panelOpen}
-            aria-controls={panelOpen ? 'series-selector-panel' : undefined}
-            onClick={() => setPanelOpen(!panelOpen)}
-          >
-            {seriesLabel}
-          </button>
-          {panelOpen && (
-            <div id="series-selector-panel" className="series-selector-panel">
-              {/* 4: Demo line */}
-              {load.mode === 'demo' && (
-                <p className="demo-line">
-                  Demo: {load.index.length} featured series out of {load.manifest.seriesCount}.
-                  Run the project locally with the hackathon data for all of them.
-                </p>
-              )}
-              <SeriesPicker
-                index={load.index}
-                teamMap={load.teamMap}
-                selectedId={selectedSeries}
-                onSelect={loadSeriesCallback}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+  const ui = { championMap: load.championMap, teamMap: load.teamMap, icons, ddragon: load.manifest.ddragon }
+  const chooseTheme = (value: Theme) => { setTheme(value); store('fearless-board:theme', value) }
+  const chooseIcons = (value: boolean) => { setIcons(value); store('fearless-board:icons', value ? 'on' : 'off') }
 
-      {/* ── Full-width board ────────────────────────────────── */}
-      <section className="board-full">
+  return (
+    <UiContext.Provider value={ui}>
+      <main className="wrap">
+        <div className="top">
+          <div className="wordmark">FEARLESS <span>BOARD</span></div>
+          <div className="selector" ref={panelRef}>
+            <button
+              ref={seriesSelectorRef}
+              type="button"
+              className="ghost"
+              aria-expanded={panelOpen}
+              aria-controls={panelOpen ? 'series-selector-panel' : undefined}
+              onClick={() => setPanelOpen(!panelOpen)}
+            >
+              {seriesLabel}
+            </button>
+            {panelOpen && (
+              <div id="series-selector-panel" className="series-selector-panel">
+                {load.mode === 'demo' && (
+                  <p className="demo-line">
+                    Demo: {load.index.length} featured series out of {load.manifest.seriesCount}.
+                    Run the project locally with the hackathon data for all of them.
+                  </p>
+                )}
+                <SeriesPicker
+                  index={load.index}
+                  teamMap={load.teamMap}
+                  selectedId={selectedSeries}
+                  onSelect={loadSeriesCallback}
+                />
+              </div>
+            )}
+          </div>
+          <div className="grow" />
+          <div className="seg" role="group" aria-label="Champion icons">
+            <button type="button" aria-pressed={icons} onClick={() => chooseIcons(true)}>Icons</button>
+            <button type="button" aria-pressed={!icons} onClick={() => chooseIcons(false)}>Names only</button>
+          </div>
+          <div className="seg" role="group" aria-label="Theme">
+            <button type="button" aria-pressed={theme === 'light'} onClick={() => chooseTheme('light')}>Light</button>
+            <button type="button" aria-pressed={theme === 'dark'} onClick={() => chooseTheme('dark')}>Dark</button>
+          </div>
+        </div>
+
         {selectedSeries && seriesDraft ? (
           <SeriesBoard
             key={`${seriesDraft.seriesId}-${selectedGame}`}
             draft={seriesDraft}
             planFor={planFor}
-            teamMap={load.teamMap}
-            championMap={load.championMap}
             playerMap={load.playerMap}
             selectedGame={selectedGame}
             onSelectGame={(gn) => selectGame(selectedSeries, gn)}
-            backtestStats={backtestStats ?? undefined}
             notesData={notesData ?? undefined}
           />
         ) : selectedSeries && seriesError ? (
@@ -305,15 +349,23 @@ function App() {
         ) : (
           <p>Select a series to view the board.</p>
         )}
-      </section>
 
-      {/* ── Attribution footer ──────────────────────────────── */}
-      <footer className="app-footer">
-        <span className="attribution">
-          Match data: GRID, provided for the Sky's The Limit 2026 hackathon. Not affiliated with or endorsed by Riot Games.
-        </span>
-      </footer>
-    </main>
+        <footer className="foot">
+          {backtestStats?.modelTop5 !== undefined && backtestStats.gamesPlayedTop5 !== undefined && (
+            <p className="backtest">
+              On games 2 and later of 2026, the real pick was among the model's five most likely {backtestStats.modelTop5}% of the
+              time ({backtestStats.gamesPlayedTop5}% for a ranking by games played).
+            </p>
+          )}
+          <p>Match data: GRID, provided for the Sky's The Limit 2026 hackathon.</p>
+          <p>
+            Fearless Board isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone
+            officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties
+            are trademarks or registered trademarks of Riot Games, Inc.
+          </p>
+        </footer>
+      </main>
+    </UiContext.Provider>
   )
 }
 

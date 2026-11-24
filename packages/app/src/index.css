@@ -1,112 +1,128 @@
-/* ── Font imports ───────────────────────────────────────────── */
-@import '@fontsource/barlow-condensed/600.css';
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/600.css';
+/* ── Typefaces, bundled with the app ───────────────────────── */
+@import '@fontsource/big-shoulders-display/700';
+@import '@fontsource/big-shoulders-display/800';
+@import '@fontsource/figtree/400';
+@import '@fontsource/figtree/500';
+@import '@fontsource/figtree/600';
+@import '@fontsource/figtree/700';
 
-/* ── Dark theme ─────────────────────────────────────────────── */
+/* ── Tokens ────────────────────────────────────────────────── */
 :root {
-  /* Height of the sticky draft bar; the bar sets it while a draft is open. */
-  --draft-bar-h: 0px;
-  font-family: 'Inter', system-ui, sans-serif;
-  line-height: 1.5;
+  --display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --body: 'Figtree', system-ui, sans-serif;
+  --radius: 6px;
+}
+
+/* Daylight (the default): a pale, cool board. Burned champions are charred.
+   Colour roles are strict: blue and red for map side, ember for burned, green for a forecast hit,
+   amber for a real pick outside the top five. */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #e9eef3;
+  --surface: #ffffff;
+  --sunk: #dde5ec;
+  --ink: #101b26;
+  --muted: #4f6072;
+  --line: #c5d1dc;
+  --ember: #c2470a;
+  --char: #1d2226;
+  --char-ink: #f3e9e1;
+  --blue: #215bb7;
+  --red: #b5303f;
+  --hit: #08704f;
+  --miss: #8a5200;
+}
+
+/* Night: the same board with the lights off. Burned champions are ash. */
+[data-theme='dark'] {
   color-scheme: dark;
-
-  /* Colours */
-  --bg: #0d1014;
-  --surface: #151a21;
-  --surface-2: #1d242d;
-  --line: #2a323d;
-  --text: #e8ebf0;
-  --muted: #8a94a3;
+  --bg: #0c1117;
+  --surface: #151c24;
+  --sunk: #0f151b;
+  --ink: #eaf0f5;
+  --muted: #8e9db0;
+  --line: #26313d;
   --ember: #ff7a1a;
+  --char: #2a211c;
+  --char-ink: #e0b192;
+  --blue: #6aa6ff;
+  --red: #ff7b7b;
   --hit: #3ddc97;
-  --new: #ffd166;
-  --blue-side: #5b9dff;
-  --red-side: #ff6b6b;
-
-  /* Legacy aliases (kept for component CSS that still references them) */
-  --color-blue-bg: rgba(91, 157, 255, 0.1);
-  --color-red-bg: rgba(255, 107, 107, 0.1);
-  --color-tile: var(--surface-2);
-  --color-tile-burned: var(--surface-2);
-  --color-burned-text: var(--ember);
-  --color-selected: rgba(91, 157, 255, 0.15);
+  --miss: #ffc24d;
 }
 
-/* ── Typography ─────────────────────────────────────────────── */
-.display,
-.team-name,
-.role-label,
-.big-number {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 600;
+/* Names used by the series list, kept as aliases of the tokens above. */
+:root {
+  --text: var(--ink);
+  --surface-2: var(--sunk);
+  --blue-side: var(--blue);
+  --red-side: var(--red);
+  --color-selected: color-mix(in srgb, var(--blue) 16%, transparent);
 }
 
-.role-label {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+/* ── Base ──────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
 }
 
-/* Tabular numbers everywhere */
-.tabular,
-td, th, .champ-tile small, .pool-cell-summary, .pool-cell-name {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Global reset ───────────────────────────────────────────── */
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--text);
+  color: var(--ink);
+  font: 15px/1.45 var(--body);
 }
 
-main {
-  max-width: 100%;
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
 }
 
-/* ── Champion Tiles (shared across components) ──────────────── */
-
-.champ-tile {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  background: var(--surface-2);
-  border-radius: 3px;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  color: var(--text);
+button {
+  cursor: pointer;
 }
 
-.champ-tile.banned {
-  text-decoration: line-through;
-  opacity: 0.6;
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+h2:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
 }
 
-.champ-tile.burned {
-  background: var(--surface-2);
-  color: var(--ember);
-  text-decoration: line-through;
-  border-left: 2px solid var(--ember);
+/* ── Series selector (in the top bar) ──────────────────────── */
+.selector {
+  position: relative;
 }
 
-/* ── Footer ─────────────────────────────────────────────────── */
+.series-selector-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
 
-.app-footer {
-  padding: 0.75rem 1.5rem;
-  border-top: 1px solid var(--line);
-  font-size: 0.75rem;
+.demo-line {
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
   color: var(--muted);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
+  font-size: 13px;
 }
 
-.attribution {
-  font-size: 0.7rem;
-  opacity: 0.7;
+.loading {
+  max-width: 60ch;
+  margin: 3rem auto;
+  padding: 0 24px;
 }

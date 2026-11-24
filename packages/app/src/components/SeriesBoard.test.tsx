@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToReadableStream } from 'react-dom/server'
 import { SeriesBoard } from './SeriesBoard'
+import { UiContext } from '../ui'
 import { trainPickModel, gamePlan as computeGamePlan, draftReducer, encodePlan, decodePlan, type DraftEvent, type DraftSession } from '@fearless-board/shared'
 import type { SeriesDraft, PickRow, PlayerRef, TeamRef, ChampionRef, PickExample, Role, GamePlan } from '@fearless-board/shared'
 
@@ -202,423 +203,236 @@ function sessionAfter(...events: DraftEvent[]): DraftSession {
   return session
 }
 
-describe('SeriesBoard render', () => {
-  it('renders both team names, ten player names, and the panel title', async () => {
-    const el = React.createElement(SeriesBoard, {
-      draft,
-      planFor,
-      teamMap,
-      championMap,
-      playerMap,
-      selectedGame: 2,
-      onSelectGame: () => {},
-    })
+/** The board inside the context the app gives it. Icons are off unless a case turns them on. */
+function board(props: Partial<React.ComponentProps<typeof SeriesBoard>> & { selectedGame: number }, ui: { icons?: boolean } = {}) {
+  return React.createElement(
+    UiContext.Provider,
+    { value: { championMap, teamMap, icons: ui.icons ?? false, ddragon: '1.2.3' } },
+    React.createElement(SeriesBoard, { draft, planFor, playerMap, onSelectGame: () => {}, ...props }),
+  )
+}
 
-    const html = await renderToString(el)
+const allPlayers = (plan: GamePlan) => plan.players.flatMap(([, roles]) => [...roles.values()])
+const count = (html: string, needle: string) => html.split(needle).length - 1
+const PICK_BUTTON = '<button type="button" class="tile'
+const PLAYER_NAMES = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'].map(n => `Player ${n}`)
 
-    // Both team names
+describe('SeriesBoard: planning', () => {
+  it('shows the header, both teams, ten players and the forecast as plain content', async () => {
+    const html = await renderToString(board({ selectedGame: 2 }))
+
+    expect(html).toContain('Player forecasts')
     expect(html).toContain('Team Alpha')
     expect(html).toContain('Team Beta')
+    for (const name of PLAYER_NAMES) expect(html).toContain(name)
 
-    // Ten player names
-    const playerNames = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
-    for (const name of playerNames) {
-      expect(html).toContain(`Player ${name}`)
+    // Header: the game number once, in the details line; the state line does not repeat it
+    expect(html).toMatch(/<b>game (?:<!-- -->)?2<\/b>/u)
+    expect(html).toContain('Score before the draft')
+    expect(html).toContain('Blue side')
+    expect(html).toContain('Red side')
+
+    // The pool label sits beside every player's name
+    expect(count(html, 'of usual picks burned</b>')).toBe(10)
+
+    // Planning tiles are content, not buttons; the main action is the reveal
+    expect(html).not.toContain(PICK_BUTTON)
+    expect(html).toMatch(/class="primary"[^>]*>Reveal game (?:<!-- -->)?2</u)
+    expect(html).toContain('Practice the draft')
+
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('shows five ranked picks per player, the first one as the large tile', async () => {
+    const html = await renderToString(board({ selectedGame: 2 }))
+    const plan = planFor(2)!
+    const expected = allPlayers(plan).reduce((sum, p) => sum + Math.min(5, p.likelihoods.length), 0)
+    expect(count(html, '<div class="tile')).toBe(expected)
+    expect(count(html, '<div class="tile lead')).toBe(allPlayers(plan).filter(p => p.likelihoods.length > 0).length)
+  })
+
+  it('never shows 0% for a positive likelihood', async () => {
+    for (const game of [1, 2, 3]) {
+      const html = await renderToString(board({ selectedGame: game }))
+      expect(html).not.toContain('class="pc num">0%<')
     }
-
-    // Leverage panel title (HTML-escaped)
-    expect(html).toMatch(/Bans (&amp;|&) Denial Picks/)
-
-    // At least one "% of recent" from role share labels
-    expect(html).toContain('% of recent')
-
-    // No NaN, no undefined, no negative percentages like "-5%"
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
-    expect(html).not.toMatch(/-\d+%/u)
   })
 
-  it('renders a draft session with 6 bans and 2 picks', async () => {
-    // Build a valid session by running draftReducer over 6 distinct bans and 2 picks
+  it('burn track: played games name their winner and their picks; the current game counts the burned champions', async () => {
+    const html = await renderToString(board({ selectedGame: 3 }))
+    const plan = planFor(3)!
+    expect(html).toContain('Team Alpha won')
+    expect(html).toContain('Team Beta won')
+    expect(html).toContain('planning now')
+    expect(html).toContain(`<div class="gone num">${plan.burned.size}</div>`)
+    // Names only: the burned champions of earlier games are written out, and there is no image
+    expect(html).toContain(championMap.get(draft.games[0].picks[0].championId)!.name)
+    expect(html).not.toContain('<img')
+  })
 
-    const session = sessionAfter(
-      { type: 'ban', championId: 'c1' },
-      { type: 'ban', championId: 'c2' },
-      { type: 'ban', championId: 'c3' },
-      { type: 'ban', championId: 'c4' },
-      { type: 'ban', championId: 'c6' },
-      { type: 'ban', championId: 'c7' },
-      { type: 'pick', playerId: 'p1', championId: 'c8' },
-      { type: 'pick', playerId: 'p6', championId: 'c9' },
+  it('icons on: icons come from Data Dragon and the ones standing alone carry the champion name', async () => {
+    const withIcons = new Map([...championMap].map(([id, c]) => [id, { ...c, icon: `${c.name.replace(/\W/gu, '')}.png` }]))
+    const el = React.createElement(
+      UiContext.Provider,
+      { value: { championMap: withIcons, teamMap, icons: true, ddragon: '1.2.3' } },
+      React.createElement(SeriesBoard, { draft, planFor, playerMap, onSelectGame: () => {}, selectedGame: 3 }),
     )
-
-    const el = React.createElement(SeriesBoard, {
-      draft,
-      planFor,
-      teamMap,
-      championMap,
-      playerMap,
-      selectedGame: 3,
-      onSelectGame: () => {},
-      initialSession: session,
-    })
-
     const html = await renderToString(el)
-
-    // Both team names in the draft bar
-    expect(html).toContain('Team Alpha')
-    expect(html).toContain('Team Beta')
-
-    // Champion names in the slots (6 bans + 2 picks = 8 slots filled)
-    expect(html).toContain('Champion One')
-    expect(html).toContain('Champion Two')
-    expect(html).toContain('Champion Three')
-    expect(html).toContain('Champion Four')
-    expect(html).toContain('Champion Six')
-    expect(html).toContain('Champion Seven')
-    expect(html).toContain('Champion Eight')
-    expect(html).toContain('Champion Nine')
-
-    // The two picking players' cells show "picked" with the champion name
-    expect(html).toContain('picked')
-    // Player One picked Champion Eight
-    expect(html).toContain('Champion Eight')
-    // Player Six picked Champion Nine
-    expect(html).toContain('Champion Nine')
-
-    // Banned champions should not appear in any open cell's tile list
-    // (they are in the unavailable set, so dimmed or hidden)
-
-    // No NaN or undefined
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
+    expect(html).toContain('https://ddragon.leagueoflegends.com/cdn/1.2.3/img/champion/')
+    const first = withIcons.get(draft.games[0].picks[0].championId)!
+    expect(html).toContain(`alt="${first.name}"`)
   })
 
-  it('item 1: ban rows render as buttons in draft mode', async () => {
-    // Session with 1 ban — next turn is a ban turn
-    const session = sessionAfter({ type: 'ban', championId: 'c1' })
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // Leverage panel renders with ban rows
-    expect(html).toContain('Bans to consider')
-    // Ban rows are <button> elements (not just <div>)
-    expect(html).toContain('leverage-row')
-    expect(html).not.toContain('NaN')
-  })
-
-  it('item 2: other champion search appears on pick turn', async () => {
-    // Session with 6 bans — next turn is a pick turn
-    const session = sessionAfter(
-      { type: 'ban', championId: 'c1' },
-      { type: 'ban', championId: 'c2' },
-      { type: 'ban', championId: 'c3' },
-      { type: 'ban', championId: 'c4' },
-      { type: 'ban', championId: 'c6' },
-      { type: 'ban', championId: 'c7' },
-    )
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // "Other champion" search input appears in picking team's cells
-    expect(html).toContain('Other champion')
-    expect(html).not.toContain('NaN')
-  })
-
-  it('item 3: last removed champion shown in draft bar', async () => {
-    // Session with 1 ban — lastRemoved is c2 (c1 is already burned in game 3)
-    const session = sessionAfter({ type: 'ban', championId: 'c2' })
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // Banned champion appears in the draft bar slot
-    expect(html).toContain('Champion Two')
-    expect(html).toContain('draft-slot-filled')
-    // Cells that had the champion in their top 10 show it struck, labelled "banned"
-    expect(html).toContain('draft-removed')
-    expect(html).toMatch(/Champion Two(<!-- -->| )*<small>banned<\/small>/u)
-    expect(html).not.toContain('NaN')
-  })
-
-  it('item 4: picked cell shows champion name', async () => {
-    const session = sessionAfter(
-      { type: 'ban', championId: 'c1' },
-      { type: 'ban', championId: 'c2' },
-      { type: 'ban', championId: 'c3' },
-      { type: 'ban', championId: 'c4' },
-      { type: 'ban', championId: 'c6' },
-      { type: 'ban', championId: 'c7' },
-      { type: 'pick', playerId: 'p1', championId: 'c8' },
-    )
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // Picked cell shows champion name and "picked"
-    expect(html).toContain('Champion Eight')
-    expect(html).toContain('picked')
-    expect(html).not.toContain('NaN')
-  })
-
-  it('item 5: draft mode shows Exit Draft and draft bar', async () => {
-    // Session with 1 ban so draftMode is true
-    const session = sessionAfter({ type: 'ban', championId: 'c1' })
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // "Exit Draft" button exists (proves draft mode is active)
-    expect(html).toContain('Exit Draft')
-    // Draft bar renders
-    expect(html).toContain('draft-bar')
-    expect(html).not.toContain('NaN')
-  })
-
-  it('item 6: two slot rows render with team names', async () => {
-    // Session with 1 ban so draftMode is true and DraftBar renders
-    const session = sessionAfter({ type: 'ban', championId: 'c1' })
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // Both team names appear as row labels in the draft bar
-    expect(html).toContain('Team Alpha')
-    expect(html).toContain('Team Beta')
-    // Draft slots exist
-    expect(html).toContain('draft-slot')
-    expect(html).not.toContain('NaN')
-  })
-
-  it('outlook: panel shows ten player names and burned shares', async () => {
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {},
-    })
-    const html = await renderToString(el)
-
-    // Outlook panel renders with compact team tables
-    expect(html).toContain('outlook-panel')
-
-    // Ten player names
-    const playerNames = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
-    for (const name of playerNames) {
-      expect(html).toContain(`Player ${name}`)
-    }
-
-    // The team line gives the mean burned share
-    expect(html.match(/Mean (?:<!-- -->)?\d+%(?:<!-- -->)? burned/gu)?.length).toBe(2)
-
-    // No NaN or undefined
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
-  })
-
-  it('outlook: game 1 shows 0% burned', async () => {
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 1, onSelectGame: () => {},
-    })
-    const html = await renderToString(el)
-
-    // Game 1 has no burned champions, so all burned shares are 0%
-    expect(html.match(/Mean (?:<!-- -->)?0%(?:<!-- -->)? burned/gu)?.length).toBe(2)
-    expect(html).not.toContain('NaN')
-  })
-
-  it('outlook: pick cost shows both team figures', async () => {
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {}, initialCostChampion: 'c2',
-    })
-    const html = await renderToString(el)
-
-    // Pick cost: the search, the chosen champion and a combined figure for each team
-    expect(html).toContain('What does a pick cost')
-    expect(html).toContain('outlook-cost-champion')
-    expect(html.match(/combined (?:<!-- -->)?\d+%/gu)?.length).toBe(2)
-
-    // Both team names appear in the panel
-    expect(html).toContain('Team Alpha')
-    expect(html).toContain('Team Beta')
-    expect(html).not.toContain('NaN')
-  })
-
-  it('outlook: draft mode collapses briefing row', async () => {
-    // Session with 1 ban — briefing row should be collapsed
-    const session = sessionAfter({ type: 'ban', championId: 'c1' })
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // Briefing row is collapsed — shows the toggle text
-    expect(html).toContain('Pre-game note and series outlook')
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
-  })
-
-  it('note: shows headline and three point titles for the selected team', async () => {
+  it('note: shown for the planning team only, with the model as a name', async () => {
     const notesData = {
       model: 'test-model',
       games: {
         '2': {
-          'tA': { headline: 'Opponent-only note', points: [] },
-          'tB': {
+          tA: { headline: 'Other team note', points: [] },
+          tB: {
             headline: 'Ten champions are gone entering game two',
             points: [
-              { title: 'Their pools', text: 'Every opponent player has lost 0% of their usual picks.' },
-              { title: 'Our pools', text: 'All our players have lost 0% of their usual picks.' },
-              { title: 'Bans and picks', text: 'The list of bans to consider is empty.' },
+              { title: 'Their pools', text: 'First point.' },
+              { title: 'Our pools', text: 'Second point.' },
+              { title: 'Bans and picks', text: 'Third point.' },
             ],
           },
         },
       },
     }
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {}, notesData,
-    })
-    const html = await renderToString(el)
-
-    // Note block renders
-    expect(html).toContain('Pre-game note')
+    // Team Beta is on the blue side in game 2, so it is the planning team by default
+    const html = await renderToString(board({ selectedGame: 2, notesData }))
     expect(html).toContain('Ten champions are gone entering game two')
-    expect(html).toContain('Their pools')
-    expect(html).toContain('Our pools')
-    expect(html).toContain('Bans and picks')
-    // Attribution line (React server rendering inserts <!-- --> between expressions)
-    // The model id is shown as a name
+    for (const title of ['Their pools', 'Our pools', 'Bans and picks']) expect(html).toContain(title)
     expect(html).toMatch(/Written by (?:<!-- -->)?Test Model(?:<!-- -->)? from the figures/u)
-    expect(html).not.toContain('Opponent-only note')
-    // Both team names are on the page
-    expect(html).toContain('Team Alpha')
-    expect(html).toContain('Team Beta')
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
+    expect(html).not.toContain('Other team note')
+    // Open by default, in the same collapsible design as the other panels
+    expect(html).toMatch(/<details open="">\s*<summary>Before game/u)
   })
 
-  it('note: no note shows no block', async () => {
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 2, onSelectGame: () => {},
-    })
-    const html = await renderToString(el)
+  it('note: without a note there is no note block', async () => {
+    const html = await renderToString(board({ selectedGame: 2 }))
+    expect(html).not.toContain('class="note"')
+    expect(html).not.toContain('Before game')
+  })
 
-    // No note block when no notes data
-    expect(html).not.toContain('Pre-game note')
-    expect(html).not.toContain('outlook-note')
+  it('pick cost: names the champion and gives a combined figure for each team', async () => {
+    const html = await renderToString(board({ selectedGame: 2, initialCostChampion: 'c2' }))
+    expect(html).toContain('What does a pick cost?')
+    expect(html).toContain(championMap.get('c2')!.name)
+    expect(count(html, ', combined ')).toBe(2)
     expect(html).not.toContain('NaN')
   })
 
-  it('item 11: draft mode with one action — briefing collapsed, ban panel before matrix', async () => {
-    const session = sessionAfter({ type: 'ban', championId: 'c1' })
-
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-
-    // Briefing row is collapsed: the toggle is there, the outlook is not
-    expect(html).toContain('Pre-game note and series outlook — show')
-    expect(html).not.toContain('outlook-panel')
-
-    // Ban panel comes before the matrix in the document
-    const leverageIndex = html.indexOf('leverage-panel')
-    const matrixIndex = html.indexOf('pool-matrix')
-    expect(leverageIndex).toBeGreaterThan(0)
-    expect(matrixIndex).toBeGreaterThan(0)
-    expect(leverageIndex).toBeLessThan(matrixIndex)
-
-    // Draft bar is present
-    expect(html).toContain('draft-bar')
-
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
+  it('series outlook: one row per player with the burned share', async () => {
+    const html = await renderToString(board({ selectedGame: 2 }))
+    expect(html).toContain('Series outlook')
+    expect(html.match(/\d+(?:<!-- -->)?% burned<\/td>/gu)?.length).toBe(10)
   })
 
-  it('item 6a: board renders from a decoded plan with same tile names and percentages', async () => {
-    const props = { draft, teamMap, championMap, playerMap, selectedGame: 2, onSelectGame: () => {} }
-    const html = await renderToString(React.createElement(SeriesBoard, { ...props, planFor: decodedPlanFor }))
-    const computed = await renderToString(React.createElement(SeriesBoard, { ...props, planFor }))
-
-    // The whole page is the same from both sources: every name, count and percentage.
-    // Only the unrounded bar widths differ, by the rounding of the stored probabilities.
+  it('a decoded plan gives the same page as a computed one', async () => {
+    const html = await renderToString(board({ selectedGame: 2, planFor: decodedPlanFor }))
+    const computed = await renderToString(board({ selectedGame: 2 }))
     expect(visibleText(html)).toBe(visibleText(computed))
+  })
+})
 
-    // Both team names
-    expect(html).toContain('Team Alpha')
-    expect(html).toContain('Team Beta')
-
-    // Ten player names
-    const playerNames = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
-    for (const name of playerNames) {
-      expect(html).toContain(`Player ${name}`)
+describe('SeriesBoard: reveal', () => {
+  it('shows who won, the updated score and both counts from the data', async () => {
+    const html = await renderToString(board({ selectedGame: 2, initialRevealed: true }))
+    const plan = planFor(2)!
+    const game = draft.games[1]
+    let topFive = 0
+    let inPool = 0
+    for (const pick of game.picks) {
+      const player = allPlayers(plan).find(p => p.playerId === pick.playerId)!
+      const rank = player.likelihoods.findIndex(l => l.championId === pick.championId) + 1
+      if (rank >= 1 && rank <= 5) topFive++
+      if (player.pool.credible.some(e => e.championId === pick.championId)) inPool++
     }
 
-    // At least one "% of recent" from role share labels
-    expect(html).toContain('% of recent')
+    expect(html).toContain('The real draft')
+    // Game 2 of three: Team Beta won it, and it did not decide the series
+    expect(html).toContain('Team Beta won this game')
+    expect(html).toMatch(/1<small>–<\/small>(?:<!-- -->)?1/u)
 
-    // No NaN or undefined
+    expect(html).toMatch(new RegExp(`>${topFive}(?:<!-- -->)? of (?:<!-- -->)?10</strong><span>forecast hits`, 'u'))
+    expect(html).toMatch(new RegExp(`>${inPool}(?:<!-- -->)? of (?:<!-- -->)?10</strong><span>from available pools`, 'u'))
+
+    // First level: one row per player; second level: the comparison, closed
+    expect(count(html, 'class="lane result')).toBe(10)
+    expect(html).toContain('<summary>Compare with forecasts</summary>')
+    expect(count(html, 'tile lead actual')).toBe(10)
+    expect(count(html, 'class="mini"')).toBe(10)
+    expect(count(html, '<li class="was"')).toBe(topFive)
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('undefined')
   })
 
-  it('item 6b: in demo mode with a draft action entered, ban panel and matrix still update', async () => {
+  it('the last game of a series decides it', async () => {
+    const decided = { ...draft, games: draft.games.slice(0, 2) }
+    const html = await renderToString(board({ draft: decided, selectedGame: 2, initialRevealed: true }))
+    expect(html).toContain('Team Beta won the series')
+  })
+})
+
+describe('SeriesBoard: practice draft', () => {
+  it('ban turn: the ban rows are buttons, and a filled slot keeps its label', async () => {
     const session = sessionAfter({ type: 'ban', championId: 'c1' })
+    const html = await renderToString(board({ selectedGame: 3, initialSession: session }))
 
-    const el = React.createElement(SeriesBoard, {
-      draft, planFor: decodedPlanFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    })
-    const html = await renderToString(el)
-    const computed = await renderToString(React.createElement(SeriesBoard, {
-      draft, planFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: session,
-    }))
-    const before = await renderToString(React.createElement(SeriesBoard, {
-      draft, planFor: decodedPlanFor, teamMap, championMap, playerMap,
-      selectedGame: 3, onSelectGame: () => {}, initialSession: { firstTeamId: 'tA', actions: [], replay: null },
-    }))
+    expect(html).toContain('Practice draft')
+    expect(html).toContain('Exit practice')
+    expect(html).toMatch(/<span class="slot ban filled[^"]*"><small>ban<\/small><span class="v">Champion One<\/span>/u)
+    // Team B bans next: its rows in the side column enter the ban
+    expect(html).toContain('Team Beta to ban')
+    expect(html).toContain('<button type="button" class="opt"')
+    // No pick buttons on a ban turn
+    expect(html).not.toContain(PICK_BUTTON)
+  })
 
-    // The live draft gives the same page from a decoded plan as from a computed one,
-    // and the ban changed the page
+  it('pick turn: only the picking team has pick buttons, up to ten per player', async () => {
+    const session = sessionAfter(
+      { type: 'ban', championId: 'c1' }, { type: 'ban', championId: 'c2' }, { type: 'ban', championId: 'c3' },
+      { type: 'ban', championId: 'c4' }, { type: 'ban', championId: 'c6' }, { type: 'ban', championId: 'c7' },
+    )
+    const html = await renderToString(board({ selectedGame: 3, initialSession: session }))
+    expect(html).toContain('Team Alpha to pick')
+    const buttons = count(html, PICK_BUTTON)
+    expect(buttons).toBeGreaterThan(0)
+    expect(buttons).toBeLessThanOrEqual(50)
+    // The other team's five lanes are dimmed and have no buttons
+    expect(count(html, 'class="lane right dim"')).toBe(5)
+    expect(html).toContain('Other champion for Player One')
+  })
+
+  it('a pick shows as picked for that player and fills the slot', async () => {
+    const session = sessionAfter(
+      { type: 'ban', championId: 'c1' }, { type: 'ban', championId: 'c2' }, { type: 'ban', championId: 'c3' },
+      { type: 'ban', championId: 'c4' }, { type: 'ban', championId: 'c6' }, { type: 'ban', championId: 'c7' },
+      { type: 'pick', playerId: 'p1', championId: 'c8' },
+    )
+    const html = await renderToString(board({ selectedGame: 3, initialSession: session }))
+    expect(html).toContain('<span class="pc word">picked</span>')
+    expect(html).toMatch(/<span class="slot pick filled[^"]*"><small>pick<\/small><span class="v">Champion Eight<\/span>/u)
+    expect(html).toContain('Team Beta to pick')
+  })
+
+  it('the note is not shown during a practice draft', async () => {
+    const notesData = { model: 'test-model', games: { '3': { tA: { headline: 'A note', points: [] }, tB: { headline: 'B note', points: [] } } } }
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
+    const html = await renderToString(board({ selectedGame: 3, initialSession: session, notesData }))
+    expect(html).not.toContain('A note')
+    expect(html).not.toContain('B note')
+  })
+
+  it('a decoded plan gives the same draft page as a computed one, and the ban changes the page', async () => {
+    const session = sessionAfter({ type: 'ban', championId: 'c1' })
+    const html = await renderToString(board({ selectedGame: 3, initialSession: session, planFor: decodedPlanFor }))
+    const computed = await renderToString(board({ selectedGame: 3, initialSession: session }))
+    const other = await renderToString(board({ selectedGame: 3, initialSession: sessionAfter({ type: 'ban', championId: 'c2' }), planFor: decodedPlanFor }))
     expect(visibleText(html)).toBe(visibleText(computed))
-    expect(visibleText(html)).not.toBe(visibleText(before))
-
-    // Draft bar renders
-    expect(html).toContain('draft-bar')
-    // Ban panel renders
-    expect(html).toContain('leverage-panel')
-    // Matrix renders
-    expect(html).toContain('pool-matrix')
-    // Exit Draft button
-    expect(html).toContain('Exit Draft')
-    expect(html).not.toContain('NaN')
-    expect(html).not.toContain('undefined')
+    expect(visibleText(html)).not.toBe(visibleText(other))
   })
 })

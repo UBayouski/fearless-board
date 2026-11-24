@@ -10,6 +10,8 @@ export interface TeamRef {
 export interface ChampionRef {
   id: string
   name: string
+  /** File name of the champion's square icon on Riot's Data Dragon, written by the pipeline. */
+  icon?: string
 }
 
 export interface DraftAction {
@@ -71,6 +73,8 @@ export interface Manifest {
   notes?: { model: string; count: number }
   /** "demo" for the demo build; absent for the full build. */
   mode?: 'demo'
+  /** Data Dragon release the champion icons are loaded from. */
+  ddragon?: string
 }
 
 /** One row per series for the series picker. */

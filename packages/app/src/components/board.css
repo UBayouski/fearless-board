@@ -1,0 +1,374 @@
+/* The board: scoreboard, burn track, lanes, reveal, practice draft and side column.
+   Colours come from the tokens in index.css. See docs/redesign.md for the rules. */
+
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, summary:focus-visible, h2:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.wrap { max-width: 1480px; margin: 0 auto; padding: 0 24px 48px; }
+
+/* Top bar */
+.top { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 12px 0; }
+.wordmark { font: 800 22px/1 var(--display); letter-spacing: .02em; }
+.wordmark span { color: var(--ember); }
+.grow { flex: 1; }
+.ghost { background: transparent; border: 1px solid var(--line); border-radius: var(--radius); padding: 0 14px; min-height: 40px; font-size: 14px; font-weight: 600; }
+.ghost:hover { border-color: var(--muted); }
+.ghost:disabled { opacity: .45; cursor: default; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.seg button { background: transparent; border: 0; padding: 0 12px; min-height: 38px; font-size: 14px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* Shared matchup header */
+.score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; gap: clamp(10px, 2.5vw, 28px); padding: 6px 0 2px; }
+.score .team { font: 800 clamp(22px, 4vw, 56px)/1 var(--display); min-width: 0; overflow-wrap: anywhere; }
+.score .team:first-child { text-align: right; }
+.side { display: block; font: 600 13px/1.2 var(--body); margin-top: 6px; }
+.side.blue { color: var(--blue); } .side.red { color: var(--red); }
+/* The score is about a fifth larger than the names; its dash has the weight and colour of the digits */
+.tally { font: 800 clamp(34px, 4.8vw, 68px)/1 var(--display); white-space: nowrap; }
+.tally small { font-size: 1em; padding: 0 .08em; }
+.details { text-align: center; color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+.details b { color: var(--ink); font-weight: 700; }
+.state { text-align: center; font-size: 15px; font-weight: 700; margin: 8px 0 14px; }
+
+/* Burn track: the series as one strip */
+.track { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.game { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 11px 10px; min-width: 0; }
+.game h3 { margin: 0; font: 700 18px/1 var(--display); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.game h3 em { font: 500 12px/1.1 var(--body); color: var(--muted); font-style: normal; text-align: right; }
+.game.now { border: 2px solid var(--ink); padding: 8px 10px 9px; }
+.burnrow { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; }
+.burnrow b { font: 600 11.5px/1.15 var(--body); width: 56px; flex: none; color: var(--muted); padding-top: 4px; }
+.burnrow b.won { color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.chip { background: var(--char); color: var(--char-ink); border-bottom: 2px solid var(--ember); border-radius: 3px; font-size: 11.5px; line-height: 1; display: inline-flex; align-items: center; }
+.chip img { width: 30px; height: 30px; display: block; border-radius: 3px 3px 0 0; filter: grayscale(1) contrast(.9) brightness(.62); }
+.chip span { padding: 5px 6px; }
+.gone { font: 800 38px/1 var(--display); color: var(--ember); margin-top: 6px; }
+.gone + p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Action line */
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin: 14px 0 12px; }
+.primary { background: var(--ink); color: var(--bg); border: 0; border-radius: var(--radius); padding: 0 18px; min-height: 44px; font-weight: 700; font-size: 15px; }
+.primary:hover { opacity: .88; }
+.actions h2 { margin: 0; font: 800 clamp(24px, 2.6vw, 34px)/1 var(--display); }
+.guide { color: var(--muted); font-size: 14px; flex: 1; min-width: 200px; margin: 0; }
+.counts { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; }
+.counts div { padding: 10px 16px; font-size: 14px; display: flex; align-items: center; gap: 12px; }
+.counts div + div { border-left: 1px solid var(--line); }
+.counts strong { font: 800 38px/1 var(--display); white-space: nowrap; }
+.counts small { display: block; color: var(--muted); font-size: 12.5px; }
+
+/* Practice draft strip */
+.strip { position: sticky; top: 0; z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px 12px; margin-bottom: 10px; }
+.turn { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 8px; }
+.turn strong { font: 800 24px/1 var(--display); }
+.turn p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; min-width: 180px; }
+.slotrow { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.slotrow b { width: 110px; flex: none; font-size: 13px; font-weight: 600; text-align: right; }
+.slots { display: flex; flex-wrap: wrap; gap: 4px; }
+.slot { width: 92px; height: 38px; border: 1px solid var(--line); border-radius: 4px; display: flex; flex-direction: column; justify-content: center; padding: 0 7px; color: var(--muted); background: var(--bg); overflow: hidden; white-space: nowrap; }
+.slot small { font-size: 10.5px; line-height: 1.2; }
+.slot .v { font-size: 12.5px; line-height: 1.25; font-weight: 600; min-height: 15px; overflow: hidden; text-overflow: ellipsis; }
+.slot.ban.filled { background: var(--char); color: var(--char-ink); border-color: var(--char); } .slot.ban.filled .v { text-decoration: line-through; }
+.slot.pick.filled { background: var(--surface); color: var(--ink); border-color: var(--ink); } .slot.pick.filled .v { font-weight: 700; }
+.slot.current { outline: 2px solid var(--ember); outline-offset: -1px; color: var(--ink); }
+.slot.gapbefore { margin-left: 12px; }
+
+/* Board and rail */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.board { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.roles { display: none; }
+.lanes { display: grid; grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr); border-top: 1px solid var(--line); }
+.lanes:first-of-type { border-top: 0; }
+.spine { background: var(--sunk); display: flex; align-items: center; justify-content: center; font: 700 15px/1 var(--display); letter-spacing: .06em; color: var(--muted); writing-mode: vertical-rl; transform: rotate(180deg); text-transform: capitalize; }
+.lane { padding: 12px 14px; min-width: 0; }
+.lane.left { text-align: right; }
+.lane.dim { opacity: .6; }
+.who { display: flex; align-items: baseline; gap: 10px; }
+.lane.left .who, .lane.left .row { flex-direction: row-reverse; }
+.who h4 { margin: 0; font: 800 25px/1 var(--display); }
+.who p { margin: 0; font-size: 13px; color: var(--muted); }
+.who p b { color: var(--ember); font-weight: 600; }
+.meter { height: 4px; background: var(--sunk); border-radius: 2px; margin: 7px 0 0; display: flex; }
+.lane.left .meter { justify-content: flex-end; }
+.meter i { background: var(--ember); border-radius: 2px; }
+.row { display: flex; gap: 6px; align-items: stretch; padding-top: 10px; }
+.tile { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); text-align: left; padding: 6px; min-width: 0; display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; max-width: 92px; color: inherit; }
+.tile img { width: 100%; max-width: 42px; aspect-ratio: 1; height: auto; border-radius: 4px; display: block; }
+.tile .nm { font-weight: 600; font-size: 13px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .pc { font: 700 20px/1 var(--display); }
+.tile .lk { height: 3px; background: var(--line); border-radius: 2px; margin-top: auto; }
+.tile .lk i { display: block; height: 100%; background: var(--ink); border-radius: 2px; }
+.tile.lead { flex: 0 0 164px; max-width: none; flex-direction: row; gap: 10px; padding: 8px; background: var(--surface); border: 2px solid var(--ink); }
+.tile.lead img { width: 60px; max-width: 60px; height: 60px; flex: none; }
+.tile.lead .txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.tile.lead .nm { font-size: 15px; }
+.tile.lead .pc { font-size: 32px; }
+.tile.new { border-style: dashed; }
+button.tile:hover { border-color: var(--blue); }
+/* Pick turn: ten compact options in two rows of five, the first one marked */
+.row.ten { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.row.ten .tile, .row.ten .tile.lead { flex: none; max-width: none; flex-direction: column; gap: 4px; padding: 6px; border-width: 1px; background: var(--bg); }
+.row.ten .tile.lead { border: 2px solid var(--ink); background: var(--surface); }
+.row.ten .tile.lead img { width: 100%; max-width: 42px; height: auto; }
+.row.ten .tile.lead .txt { display: contents; }
+.row.ten .tile.lead .nm { font-size: 13px; } .row.ten .tile.lead .pc { font-size: 20px; }
+.gone-d { margin-top: 6px; font-size: 13px; }
+.gone-d summary { color: var(--ember); padding: 4px 0; }
+.burnt { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; align-items: center; }
+.lane.left .burnt { justify-content: flex-end; }
+.burnt .chip img { width: 22px; height: 22px; border-radius: 3px 0 0 0; }
+.burnt small { color: var(--muted); font-size: 12px; margin: 0 4px; }
+
+.tile.off img { filter: grayscale(1); opacity: .45; }
+.tile.off, .tile.off.lead { border-color: var(--line); border-width: 1px; }
+/* Comparison table: the real pick is the large tile next to the role, the five forecasts follow */
+.row.table { padding-top: 18px; }
+.row.table .tile:not(.actual) { max-width: 104px; }
+.tile.actual { position: relative; flex: 0 0 172px; }
+.tile.actual .tag { position: absolute; top: -13px; left: 6px; white-space: nowrap; font-size: 11px; line-height: 1.2; font-weight: 700; padding: 2px 6px; border-radius: 3px; color: var(--surface); }
+.lane.left .tile.actual .tag { left: auto; right: 6px; }
+.tile.actual.hit2 { border-color: var(--hit); background: color-mix(in srgb, var(--hit) 12%, var(--surface)); }
+.tile.actual.hit2 .tag { background: var(--hit); }
+.tile.actual.miss2 { border: 2px dashed var(--miss); }
+.tile.actual.miss2 .tag { background: var(--miss); }
+.tile.was { border: 2px solid var(--hit); padding: 5px; }
+@media (prefers-reduced-motion: no-preference) {
+  .tile.actual { animation: land .45s cubic-bezier(.2, .9, .3, 1.2) both; animation-delay: calc(var(--i) * 100ms); }
+}
+@media (max-width: 760px) {
+  .row.table { padding-top: 8px; }
+  .row.table .tile:not(.actual) { max-width: none; }
+  .tile.actual, .tile.actual.lead { flex: none; flex-wrap: wrap; }
+  .tile.actual .tag, .lane.left .tile.actual .tag { position: static; order: -1; flex: 1 1 100%; background: none; padding: 0; white-space: normal; }
+  .tile.actual.hit2 .tag { color: var(--hit); background: none; } .tile.actual.miss2 .tag { color: var(--miss); background: none; }
+}
+/* Reveal: five paired rows, the real pick and where the forecast had it */
+.lane.result { display: flex; align-items: center; gap: 12px; padding: 10px 14px; text-align: left; }
+.lane.result.left { flex-direction: row-reverse; text-align: right; }
+.lane.result img { width: 44px; height: 44px; border-radius: 4px; flex: none; }
+.lane.result .id { flex: 1; min-width: 0; }
+.lane.result .id strong { display: block; font: 800 24px/1.05 var(--display); overflow-wrap: anywhere; }
+.lane.result .id span { font-size: 13px; color: var(--muted); }
+/* Rank and its label share the lane's outer edge, so they line up down the column */
+.rank { font-size: 12.5px; font-weight: 700; text-align: right; flex: none; width: 138px; }
+.lane.result.left .rank { text-align: left; }
+.rank strong { display: block; font: 800 26px/1 var(--display); }
+.rank.hit { color: var(--hit); } .rank.miss { color: var(--miss); }
+/* What the forecast expected: five small entries between the real pick and its rank */
+.mini { list-style: none; display: flex; gap: 4px; margin: 0; padding: 0; flex: none; }
+.mini li { width: 46px; border: 1px solid var(--line); border-radius: 5px; padding: 3px; text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--bg); }
+/* Forecasts that did not happen are greyed out, so the one that did stands out; the text keeps its contrast */
+.mini img { width: 100%; height: auto; aspect-ratio: 1; display: block; border-radius: 3px; margin-bottom: 2px; filter: grayscale(1); opacity: .45; }
+.mini .nm { display: none; }
+/* Mirrored like the board: on the left team the likeliest forecast sits nearest the role */
+.lane.result.left .mini { flex-direction: row-reverse; }
+.mini li.was { color: var(--hit); }
+[data-icons="on"] .mini li.was img { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--hit); }
+[data-icons="off"] .mini li.was { border-color: var(--hit); box-shadow: inset 0 0 0 1px var(--hit); background: color-mix(in srgb, var(--hit) 12%, var(--surface)); }
+.mini li.was img { filter: none; opacity: 1; }
+.mini li.was { font-weight: 700; }
+[data-icons="on"] .mini li { border-color: transparent; background: transparent; }
+[data-icons="off"] .mini { flex-wrap: wrap; flex: 0 1 300px; }
+[data-icons="off"] .lane.result.left .mini { justify-content: flex-end; }
+[data-icons="off"] .mini li { width: auto; padding: 3px 6px; display: flex; gap: 5px; }
+[data-icons="off"] .mini .nm { display: inline; }
+@media (prefers-reduced-motion: no-preference) {
+  .lane.result > * { animation: land .4s cubic-bezier(.2, .9, .3, 1.15) both; animation-delay: calc(var(--i) * 90ms); }
+  @keyframes land { from { transform: translateY(-10px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+details.more { margin-top: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+/* Every collapsible panel: the browser's arrow, then a bold label */
+summary { cursor: pointer; font-weight: 700; }
+details.more > summary { padding: 11px 14px; min-height: 44px; }
+details.more > .inner { padding: 0 10px 10px; }
+details.more p { margin: 0 4px 8px; font-size: 14px; color: var(--muted); }
+details.more p b { color: var(--ink); }
+.inner.bans { display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; padding-left: 4px; }
+@media (max-width: 760px) { .inner.bans { grid-template-columns: 1fr; } }
+
+/* Rail */
+.rail > section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
+.rail > section.note { padding-top: 2px; padding-bottom: 2px; }
+.note details[open] { padding-bottom: 10px; }
+.rail h3 { margin: 0 0 8px; font: 700 20px/1.1 var(--display); }
+.rail .seg { margin-bottom: 4px; }
+.note summary { padding: 9px 0 10px; }
+.note .hl { font-weight: 600; margin: 6px 0 6px; }
+.note p { margin: 0 0 8px; font-size: 14px; }
+.note footer { font-size: 12px; color: var(--muted); }
+.opt { display: grid; grid-template-columns: 32px 1fr auto; gap: 2px 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; }
+.opt:first-of-type { border-top: 0; }
+.opt img { width: 32px; height: 32px; border-radius: 4px; grid-row: span 2; }
+[data-icons="off"] .opt { grid-template-columns: 1fr auto; }
+.opt .nm { font-weight: 600; }
+.opt .gap { font: 700 22px/1 var(--display); grid-row: span 2; }
+.opt .why { font-size: 13px; color: var(--muted); }
+
+.foot { color: var(--muted); font-size: 12px; margin-top: 18px; max-width: 90ch; }
+.foot p { margin: 0 0 4px; }
+
+@media (max-width: 1340px) {
+  .layout { grid-template-columns: 1fr; }
+  .rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 10px; } .rail > section { margin: 0; }
+}
+@media (max-width: 1000px) {
+  /* The series strip scrolls sideways inside its own box; the current game is scrolled into view */
+  .track { display: flex; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+  .game { flex: 0 0 250px; scroll-snap-align: start; }
+  .track.slim .game { flex-basis: 170px; }
+}
+/* Phone: one role at a time, both players visible, one full-name row per prediction */
+@media (max-width: 760px) {
+  .wrap { padding: 0 12px 32px; }
+  .actions .primary { flex: 1 1 100%; order: 3; }
+  .counts div { display: block; padding: 8px 10px; font-size: 13px; } .counts strong { display: block; font-size: 30px; }
+  .strip { position: static; } .slotrow { align-items: flex-start; } .slotrow b { width: 58px; font-size: 12px; text-align: left; padding-top: 5px; } .slot { width: 62px; padding: 0 4px; font-size: 11px; } .slot.gapbefore { margin-left: 0; }
+  .roles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; margin-bottom: 6px; }
+  .roles button { background: transparent; border: 1px solid var(--line); border-radius: 4px; min-height: 44px; padding: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: capitalize; }
+  .roles button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .lanes { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-top: 0; } .lanes:not(.active) { display: none; }
+  .spine { display: none; }
+  .lane { padding: 10px 8px; } .lane + .lane { border-left: 1px solid var(--line); }
+  .lane.left, .lane.result.left { text-align: left; } .lane.left .who, .lane.left .row, .lane.result.left { flex-direction: row; } .lane.left .meter, .lane.left .burnt { justify-content: flex-start; }
+  .who { flex-wrap: wrap; gap: 2px 8px; } .who h4 { font-size: 21px; }
+  .row, .row.ten, .row.flat { display: flex; flex-direction: column; gap: 4px; }
+  .lane.left .row.flat { direction: ltr; }
+  .row.flat .tile, .row.flat .tile.lead { flex-wrap: nowrap; } .row.flat .tile .nm, .row.flat .tile.lead .nm { flex: 1; order: 0; }
+  .who .res { flex: 1 1 100%; }
+  .lane.left .row { flex-direction: column; }
+  .tile, .tile.lead, .row.ten .tile, .row.ten .tile.lead { flex: none; max-width: none; width: 100%; flex-direction: row; align-items: center; gap: 6px; padding: 6px 7px; }
+  .tile img, .tile.lead img, .row.ten .tile.lead img { width: 24px; max-width: 24px; height: 24px; }
+  .tile .txt, .tile.lead .txt { display: contents; }
+  .tile .nm, .tile.lead .nm, .row.ten .tile.lead .nm { font-size: 13.5px; white-space: normal; overflow: visible; flex: 1; }
+  .tile .pc, .tile.lead .pc, .row.ten .tile.lead .pc { font-size: 18px; margin-left: auto; }
+  .tile .lk { display: none; }
+  .burnt .chip img { display: none; }
+  .lane.result { flex-wrap: wrap; gap: 4px 8px; } .mini, [data-icons="off"] .mini { order: 3; flex: 1 1 100%; flex-direction: column; flex-wrap: nowrap; gap: 3px; } .mini li, [data-icons="off"] .mini li { width: auto; display: flex; justify-content: space-between; gap: 6px; padding: 4px 7px; text-align: left; font-size: 13px; } .mini img { display: none; } .mini .nm { display: inline; } .mini li.was, [data-icons="on"] .mini li.was { border-color: var(--hit); box-shadow: inset 0 0 0 1px var(--hit); background: color-mix(in srgb, var(--hit) 12%, var(--surface)); } .lane.result .rank { order: 2; } .lane.result img { width: 30px; height: 30px; } .lane.result .id strong { font-size: 20px; } .lane.result .rank { flex: 1 1 100%; text-align: left; } .rank strong { display: inline; font-size: 20px; margin-right: 4px; }
+}
+
+/* ── App-only additions (not in the mockup) ────────────────── */
+
+/* Position of a real pick in the reveal sequence; each row sets its own value inline. */
+.series-board { --i: 0; }
+
+/* The forecast strip on reveal, and the sentence that describes it, appear only where a lane has room:
+   about 600 px per lane, which is a window of roughly 1,320 px. Below that the rows show pick and rank. */
+.mini, .with-strip { display: none; }
+@media (min-width: 1320px) {
+  .mini { display: flex; }
+  .with-strip { display: inline; }
+}
+
+/* Small labels beside a player's name */
+.who .flag { font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; }
+.lineup-note { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.removed { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.removed s { color: var(--ember); }
+.tile .pc.word { font-size: 22px; }
+.picked-rank { font-size: 12.5px; color: var(--muted); align-self: center; }
+
+/* Champion search (ban search in the strip, "other champion", pick cost) */
+.champ-search { position: relative; }
+.champ-search-input { width: 100%; min-height: 40px; padding: 0 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); font-size: 14px; }
+.champ-search-results { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin-top: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgb(0 0 0 / 20%); }
+.champ-search-result { display: block; width: 100%; min-height: 40px; padding: 0 10px; text-align: left; background: none; border: 0; font-size: 14px; }
+.champ-search-result:hover, .champ-search-result.focused { background: var(--sunk); }
+.lane .champ-search { margin-top: 8px; text-align: left; }
+.strip .champ-search { flex: 0 1 280px; }
+
+/* Rows in the side column that act: a ban on a ban turn, a pick cost for a denial pick */
+button.opt { cursor: pointer; min-height: 44px; border-radius: 0; }
+button.opt:hover { background: var(--sunk); }
+.rail .hint { margin: 0 0 4px; font-size: 13px; color: var(--muted); }
+.rail details.fold > summary { min-height: 32px; display: list-item; padding: 6px 0; }
+.rail details.fold[open] > summary { margin-bottom: 4px; }
+.outlook { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 8px; }
+.outlook caption { text-align: left; font-weight: 700; padding: 4px 0; }
+.outlook td { padding: 3px 0; border-top: 1px solid var(--line); }
+.outlook td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; }
+.outlook .soft { color: var(--muted); }
+.cost p { margin: 8px 0 0; font-size: 14px; }
+.cost .soft { color: var(--muted); }
+
+/* Practice draft: first-team choice, replay */
+.turn .seg button { min-height: 40px; }
+.turn .soft { color: var(--muted); font-size: 14px; }
+.game[role='button'], button.game { cursor: pointer; text-align: left; font: inherit; color: inherit; }
+button.game:hover { border-color: var(--muted); }
+button.game:disabled { cursor: default; opacity: .55; }
+button.game.now:disabled { opacity: 1; }
+
+/* Footer of the page */
+.foot .backtest { color: var(--ink); }
+
+/* Every control is at least 44 px tall */
+.ghost, .seg button, .roles button { min-height: 44px; }
+details.more > summary, .rail details.fold > summary, .note summary, .gone-d summary { min-height: 44px; display: list-item; align-content: center; }
+.gone-d summary, .note summary, .rail details.fold > summary { padding-top: 11px; padding-bottom: 11px; }
+
+/* Banned champions under the reveal: a comma-separated run */
+.ban-name + .ban-name::before { content: ', '; }
+
+/* ── Lanes adapt to their own width, not the window's ──────── */
+.lanes > .lane { container-type: inline-size; }
+
+/* A long name takes a second line before it is cut */
+.tile .nm { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+/* A lane on a laptop beside the side column: a smaller first tile leaves room for the names */
+@container (max-width: 500px) {
+  .row:not(.ten):not(.table) > .tile.lead { flex-basis: 130px; gap: 8px; padding: 6px; }
+  .row:not(.ten):not(.table) > .tile.lead img { width: 46px; max-width: 46px; height: 46px; }
+  .row:not(.ten):not(.table) > .tile.lead .pc { font-size: 26px; }
+  .row > .tile { padding: 5px; }
+  .row > .tile .nm { font-size: 12px; }
+  .row.table > .tile.actual { flex-basis: 140px; }
+  .row.table > .tile.actual img { width: 46px; max-width: 46px; height: 46px; }
+}
+
+/* A narrow lane (tablets, two teams side by side): one full-name row per prediction, as on phones */
+@container (max-width: 400px) {
+  .row, .row.ten, .lane.left .row { display: flex; flex-direction: column; gap: 4px; }
+  .row > .tile, .row > .tile.lead, .row.ten > .tile, .row.ten > .tile.lead, .row.table > .tile.actual {
+    flex: none; max-width: none; width: 100%; flex-direction: row; align-items: center; gap: 6px; padding: 6px 7px;
+  }
+  .row > .tile img, .row > .tile.lead img, .row.table > .tile.actual img { width: 24px; max-width: 24px; height: 24px; }
+  .row > .tile .txt { display: contents; }
+  .row > .tile .nm, .row > .tile.lead .nm { font-size: 13.5px; flex: 1; -webkit-line-clamp: unset; display: block; }
+  .row > .tile .pc, .row > .tile.lead .pc { font-size: 18px; margin-left: auto; }
+  .row > .tile .lk { display: none; }
+  .row.table > .tile.actual { flex-wrap: wrap; }
+  .row.table > .tile.actual .tag, .lane.left .row.table > .tile.actual .tag { position: static; order: -1; flex: 1 1 100%; background: none; padding: 0; white-space: normal; }
+  .tile.actual.hit2 .tag { color: var(--hit); }
+  .tile.actual.miss2 .tag { color: var(--miss); }
+  .lane.left { text-align: left; }
+  .lane.left .who { flex-direction: row; }
+  .who { flex-wrap: wrap; gap: 2px 8px; }
+  .lane.left .meter, .lane.left .burnt { justify-content: flex-start; }
+}
+
+/* The comparison table has six tiles in a row, so it tightens and stacks earlier than the other rows */
+@container (max-width: 600px) {
+  .row.table > .tile.actual { flex-basis: 140px; }
+  .row.table > .tile.actual img { width: 46px; max-width: 46px; height: 46px; }
+  .row.table > .tile { padding: 5px; }
+  .row.table > .tile .nm { font-size: 12.5px; }
+}
+@container (max-width: 470px) {
+  .row.table, .lane.left .row.table { display: flex; flex-direction: column; gap: 4px; }
+  .row.table > .tile, .row.table > .tile:not(.actual), .row.table > .tile.actual { flex: none; max-width: none; width: 100%; flex-direction: row; align-items: center; gap: 6px; padding: 6px 7px; }
+  .row.table > .tile img, .row.table > .tile.actual img { width: 24px; max-width: 24px; height: 24px; }
+  .row.table > .tile .txt { display: contents; }
+  .row.table > .tile .nm { font-size: 13.5px; flex: 1; -webkit-line-clamp: unset; display: block; }
+  .row.table > .tile .pc { font-size: 18px; margin-left: auto; }
+  .row.table > .tile .lk { display: none; }
+  .row.table > .tile.actual { flex-wrap: wrap; }
+  .row.table > .tile.actual .tag, .lane.left .row.table > .tile.actual .tag { position: static; order: -1; flex: 1 1 100%; background: none; padding: 0; white-space: normal; }
+}
+/* The narrowest phones: no room for an icon beside the name */
+@container (max-width: 150px) {
+  .row > .tile img, .row > .tile.lead img, .row.table > .tile.actual img { display: none; }
+}
