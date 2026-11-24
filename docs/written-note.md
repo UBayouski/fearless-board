@@ -123,9 +123,9 @@ Rules:
 - Never write a field name from the JSON. Say it in words: "has lost 51% of his usual picks", "a 25% chance".
 - At most two players per point and at most five percentages in the whole note.
 - For a ban you may quote "gapPoints", the difference between the two chances, as "an 8-point gap" (never with a percent sign). Do not work out any other number yourself.
-- Do not predict who wins, and do not say that a team is favoured, ahead, or at an advantage or disadvantage. The score may be stated.
+- Do not predict who wins, and do not say that a team is favoured, ahead, or at an advantage or disadvantage. The score may be stated in a point, never in the headline.
 - Do not give reasons from game knowledge (matchups, synergy, meta strength).
 - Do not use "he", "his", "she" or "her" for a player; repeat the name or use "they".
 - Plain English, short sentences, no hype. If a list in the facts is empty, say so in a few words.
-Return JSON: { "headline": one sentence of at most 14 words naming the single most notable fact, "points": exactly three objects { "title", "text" } with titles "Their pools", "Our pools", "Bans and picks", each text at most 40 words }.
+Return JSON: { "headline": one sentence of at most 14 words naming the single most notable fact about a player's pool (for example who has lost the most of their usual picks); never the score, the game number or which team leads, "points": exactly three objects { "title", "text" } with titles "Their pools", "Our pools", "Bans and picks", each text at most 40 words }.
 ```

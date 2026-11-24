@@ -197,7 +197,14 @@ did not trigger, and it is off under `prefers-reduced-motion`.
 - **Riot notice:** the footer text matches the wording on Riot's general developer policies page, checked on
   2026-11-23 (the League docs page words it slightly differently; the general page is the one the hackathon
   rules point to).
-- **Not done yet:** the note headline change and regenerating the notes (item 3 below); a contrast measurement; a keyboard-only and a screen-reader pass.
+- **Done after the build (2026-11-23):** note headlines are pool facts (prompt version 3, a `headline_states_score`
+  check, 138 notes regenerated, none about the score). Contrast measured for every text element in planning, practice
+  draft and reveal in both themes: lowest ratio 4.28 on large text in light and 6.21 in dark, nothing below its WCAG AA
+  threshold. To get there, the team that is not picking is no longer faded by opacity; its icons are greyed and its
+  tiles lose their fill and bars, and the text keeps its colour. Keyboard-only run with real key presses: tab order,
+  focus ring, Enter and Space on every control, the champion search (arrow, Enter, Escape) and the series list all
+  work. Undo and Reset use `aria-disabled` so the focus is not dropped when they can no longer act.
+- **Not done yet:** a screen-reader pass.
 
 ## Build steps
 

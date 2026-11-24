@@ -140,8 +140,8 @@ function makeNames(): NoteNames {
 // ── Item 2: NOTE_PROMPT ──────────────────────────────────────────────
 
 describe('NOTE_PROMPT', () => {
-  it('NOTE_PROMPT_VERSION equals 2', () => {
-    assert.strictEqual(NOTE_PROMPT_VERSION, 2)
+  it('NOTE_PROMPT_VERSION equals 3', () => {
+    assert.strictEqual(NOTE_PROMPT_VERSION, 3)
   })
 
   it('NOTE_PROMPT contains key instructions', () => {
@@ -253,6 +253,21 @@ describe('checkNote: passing note', () => {
     const note = makePassingNote()
     const problems = checkNote(facts, note, allChampionNames)
     assert.strictEqual(problems.length, 0, `Expected no problems, got: ${problems.map(p => p.detail).join('; ')}`)
+  })
+})
+
+describe('checkNote: headline', () => {
+  it('rejects a headline that restates the score', () => {
+    const facts = makeTestFacts()
+    for (const headline of ['Game 3 is tied at 1-1', 'Team Alpha leads 2 - 0 entering game 3', 'Team Alpha trail before game 3']) {
+      const problems = checkNote(facts, { ...makePassingNote(), headline }, allChampionNames)
+      assert.ok(problems.some(p => p.rule === 'headline_states_score'), headline)
+    }
+  })
+
+  it('accepts a headline about a pool', () => {
+    const problems = checkNote(makeTestFacts(), makePassingNote(), allChampionNames)
+    assert.ok(!problems.some(p => p.rule === 'headline_states_score'))
   })
 })
 

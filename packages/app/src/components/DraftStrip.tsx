@@ -60,6 +60,8 @@ export function DraftStrip({
   const type = slot ? (slot[2] === 'b' ? 'ban' : 'pick') : null
   const inReplay = session.replay !== null
   const last = actions.at(-1)
+  const canUndo = actions.length > 0 && !inReplay
+  const canReset = actions.length > 0
 
   const status = !slot || !actingTeamId
     ? 'Draft complete'
@@ -80,8 +82,9 @@ export function DraftStrip({
         {type === 'ban' && !inReplay && (
           <ChampionSearch placeholder="Search a champion to ban" unavailable={unavailable} championMap={championMap} onSelect={onBan} />
         )}
-        <button type="button" className="ghost" onClick={onUndo} disabled={actions.length === 0 || inReplay}>Undo</button>
-        <button type="button" className="ghost" onClick={onReset} disabled={actions.length === 0}>Reset</button>
+        {/* Not `disabled`: a button that disables itself under the keyboard would drop the focus */}
+        <button type="button" className="ghost" aria-disabled={!canUndo} onClick={() => canUndo && onUndo()}>Undo</button>
+        <button type="button" className="ghost" aria-disabled={!canReset} onClick={() => canReset && onReset()}>Reset</button>
         {inReplay ? (
           <button type="button" className="ghost" onClick={onReplayNext} disabled={session.replay!.remaining.length === 0}>
             {session.replay!.remaining.length > 0 ? 'Next action' : 'Replay complete'}

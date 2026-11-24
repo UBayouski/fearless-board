@@ -1,34 +1,58 @@
 # Fearless Board
 
-Series-long League of Legends draft planning for Fearless Draft. Enter a series game by game, see which champions are burned, how each player's remaining pool shrinks, and what credible options the opponent still has in game three and beyond.
+A draft desk for League of Legends series played under Fearless Draft, where a champion picked by either team is gone for both teams for the rest of the series. For any game of a series it shows which champions are burned, what each player is still likely to pick, which bans are worth considering, and, once you reveal the game, how the forecast compared with the real draft.
 
-Built for the Cloud9 x JetBrains: Sky's The Limit Hackathon 2026, Category 2 (LoL).
+Built for the Cloud9 x JetBrains "Sky's The Limit" hackathon 2026, Category 2 (League of Legends).
 
-Status: scaffold only. The draft extraction and the board are not built yet.
+![Planning view: the series so far, and each player's five likeliest picks](docs/img/planning.png)
 
-## Layout
+## What it does
 
-```
-packages/
-  shared/     types and Fearless Draft rules used by both sides
-  pipeline/   Node script: reads the match data, writes aggregate JSON
-  app/        React + Vite site that loads the aggregates
-scripts/
-  check-no-data.mjs   guard against committing licensed data
-```
+**Planning.** The two teams face each other, roles down the middle. Each player shows how much of their usual picks is burned and their five likeliest picks, sized by likelihood. The strip above the board is the series so far: every played game with its ten burned champions. The side column advises one team: a short written note, bans to consider, picks that also deny the opponent, what a pick would cost both teams, and the series outlook.
 
-## Requirements
+**Practice draft.** Enter bans and picks in draft order. After every action the lists and the ban advice are recomputed with those champions removed. The picking team's players show ten options to click; a search covers everything else. Undo, reset, and a replay of the real draft are available.
 
-- Node 24 or newer
-- pnpm 10
+![Practice draft, dark theme](docs/img/practice-draft.png)
 
-## Setup
+**Reveal.** Shows the real draft against the forecast: who won, how many real picks were in the model's top five, how many came from the players' available pools, and for each player the real pick, its rank, and the five champions the forecast expected. "Compare with forecasts" opens a detailed table.
+
+![Reveal: the real picks and where the forecast ranked them](docs/img/reveal.png)
+
+Light and dark themes, champion icons or names only, and a layout that works from a phone to a wide screen.
+
+## Results in brief
+
+Measured on 2026 games with a model trained on earlier games. Details and limits are under [Method](#method).
+
+| Question | Result |
+|---|---|
+| Is the real pick among the model's five likeliest? (games 2 and later, 2,460 picks) | 62.6%, against 50.1% for ranking by games played |
+| The same during a draft, once earlier bans and picks are removed (4,500 picks) | 74.4%, against 62.9% before the draft |
+| Is the real ban among the eight suggested? (4,499 bans) | 26.6%, against 21.1% for the most-picked champions of the last 45 days |
+
+The ban list is a list of bans to consider, not a prediction: about three of four real bans fall outside it. The burned share of a player's pool describes the pool; in this data it does not predict who wins.
+
+## Quick start
+
+Requirements: Node 24 or newer, pnpm 10.
 
 ```bash
 pnpm install
-pnpm test        # rule tests
-pnpm typecheck
+pnpm data        # build the aggregates from a local copy of the match data (see below)
 pnpm dev         # start the app
+```
+
+Other commands:
+
+```bash
+pnpm test          # unit tests and render tests
+pnpm typecheck     # type-check all packages
+pnpm lint          # lint the app
+pnpm build         # production build (full, local only)
+pnpm data:demo     # build the demo data from the full output
+pnpm build:demo    # demo build, the only one that may be hosted
+pnpm data:notes    # generate pre-game notes (needs a Gemini API key)
+pnpm check:data    # verify that no data file is tracked or staged
 ```
 
 ## Match data
@@ -49,31 +73,45 @@ cd stl-hackathon-2026-grid-starter
 git sparse-checkout set lol meta
 ```
 
-Then build the aggregates:
-
-```bash
-pnpm data
-```
-
-To use a different location, set `STL_DATA_DIR` to the data repository's path.
+Then run `pnpm data`. To use a different location, set `STL_DATA_DIR` to the data repository's path.
 
 `pnpm data` writes to `packages/app/public/data/`, which is ignored by git. Run `pnpm check:data` before every commit and push; it fails if any data file is tracked or staged.
 
+## Two builds
+
+The data licence forbids redistributing the data or any derived dataset that "still contains or allows reconstruction" of it. So there are two builds:
+
+- **Full (local):** `pnpm data` writes every pick and ban of 1,737 games, and the app computes each game's plan in the browser. This build is for development and for judges who run the project against their own copy of the data. It must never be deployed.
+- **Demo (hosted):** `pnpm data:demo` selects 20 featured series by rule (at least four games played, all ten players with 20 or more earlier series, newest first) and stores their plans as finished statistics: names, counts and percentages. It contains no pick rows and no model file. `pnpm build:demo` builds the app against this folder into `dist-demo/` and fails unless that folder passes its checks. Only `dist-demo` is ever deployed.
+
+The board looks and behaves the same in both builds for a featured series; a test compares a stored plan with a computed one.
+
+## Layout
+
+```
+packages/
+  shared/     types, Fearless Draft rules, the pick model, draft logic, the note check
+  pipeline/   Node scripts: read the match data, train and test the model, write the aggregates
+  app/        React + Vite site that loads the aggregates
+scripts/      guards: no licensed data in git, and the checks on the demo build
+docs/         the briefs the project was built from, and the redesign specification
+```
+
 ## Method
 
-The board uses a conditional logit model to score every available champion for each player. Four features are computed per (player, champion) pair: recency-weighted games played by that player, whether the player has ever played the champion, the champion's popularity in the player's role over the last 45 days, and the champion's all-time popularity in the role. The four weights and standardisation parameters are trained on pre-2026 games using Newton's method and run in the browser as plain arithmetic — no language model or external dependency.
+**Pick model.** A conditional logit model scores every available champion for each player. Four features are computed per (player, champion) pair: recency-weighted games played by that player, whether the player has ever played the champion, the champion's popularity in the player's role over the last 45 days, and the champion's all-time popularity in the role. The four weights are trained on pre-2026 games with Newton's method and run in the browser as plain arithmetic; no language model is involved.
 
-**Model weights:** recentGames 0.0953, played 0.0740, roleMeta 1.1834, roleAllTime 0.3983. Training log-likelihood: −2.5912; test log-likelihood: −2.7818.
+Weights: recentGames 0.0953, played 0.0740, roleMeta 1.1834, roleAllTime 0.3983. Log-likelihood per pick: −2.5912 in training, −2.7818 in the test.
 
-**Evaluation** on 2026+ games:
+Evaluation on 2026 games:
 
-| Group | Picks | Model Top 5 | Games Played Top 5 | Model Top 10 | Games Played Top 10 |
+| Group | Picks | Model top 5 | Games played top 5 | Model top 10 | Games played top 10 |
 |---|---|---|---|---|---|
 | All | 4,520 | 62.9% | 50.3% | 85.2% | 72.5% |
 | Games 2+ | 2,460 | 62.6% | 50.1% | 84.3% | 72.5% |
-| Games 2+, 20+ prior | 2,190 | 62.6% | 51.8% | 84.2% | 76.6% |
+| Games 2+, 20+ prior games | 2,190 | 62.6% | 51.8% | 84.2% | 76.6% |
 
-**Calibration** (predicted vs actual pick rate):
+Calibration (predicted against actual pick rate):
 
 | Bin | Mean predicted | Actual pick rate |
 |---|---|---|
@@ -83,65 +121,50 @@ The board uses a conditional logit model to score every available champion for e
 | 10–20% | 14.0% | 13.6% |
 | 20%+ | 25.5% | 20.1% |
 
-**Limits:** Professional games in this dataset only; roles are derived from end-of-game state, not official data; bans of the current game are not used because they are unknown before the draft.
+Limits: professional games in this dataset only; roles are derived from end-of-game state, not from official data; the bans of the current game are not used before the draft because they are not known then.
 
-**Ban leverage** ranks available champions by how much the opposing team wants them minus how much the own team wants them. The threat of a champion from a team is `1 − ∏(1 − P(player picks c))` across the five players. The top 8 champions by this difference are shown as ban suggestions, with the opponent players who want each champion (likelihood ≥ 5%) and the cost to the own team if it also wants the champion. **Denial picks** are champions an own-team player has played before and has among their ten most likely picks, sorted by the opponent's threat — picking such a champion both uses it and removes it from the opponent for the rest of the series.
+**Bans to consider.** Available champions are ranked by how much the opposing team wants them minus how much the own team wants them. The threat of a champion from a team is `1 − ∏(1 − P(player picks c))` over its five players. A ban is listed when the gap is more than two points. **Picks that also deny** are champions an own-team player has played before and has among their ten likeliest picks, sorted by the opponent's threat: picking one both uses it and removes it from the opponent for the rest of the series.
 
-**Ban leverage backtest** on 2026+ games (model trained on pre-2026):
+Backtest on 2026 games:
 
-| Group | Bans | Leverage Top 5 | Leverage Top 8 | Threat Top 5 | Threat Top 8 | Meta Top 5 | Meta Top 8 |
+| Group | Bans | Leverage top 5 | Leverage top 8 | Threat top 5 | Threat top 8 | Meta top 5 | Meta top 8 |
 |---|---|---|---|---|---|---|---|
 | All games | 4,499 | 17.8% | 26.6% | 15.7% | 23.6% | 13.9% | 21.1% |
 | Games 2+ | 2,459 | 18.5% | 27.4% | 16.5% | 25.4% | 15.0% | 23.5% |
 
-Leverage finds 26.6% of real bans in its top 8 against 21.1% for the plain 45-day meta list — a modest gain. About three of four real bans fall outside the list entirely, so the panel is a list of bans to consider, not a prediction.
+**Practice draft.** After each action, banned and picked champions are removed from every player's list and the remaining probabilities are rescaled; the ban advice is recomputed from the updated lists. The draft order follows the data: six bans, six picks, four bans, four picks, expressed as "first team" and "second team", because in 2026 the red side acts first in about half of the games.
 
-**Live draft** lets you enter bans and picks as they happen during a real draft. After each action, banned and picked champions are removed from every player's list and the remaining probabilities are rescaled. The ban leverage panel is recomputed with the updated lists. A replay mode steps through the real draft actions one at a time, showing the rank of each actual pick in the conditioned list. The draft order follows the pattern discovered from the data: 6 bans, 6 picks, 4 bans, 4 picks — expressed as "first team" and "second team" rather than blue and red, since in 2026 about half of games have the red side act first.
+Backtest on 2026 games:
 
-**Live draft backtest** on 2026+ games (model trained on pre-2026):
-
-| Group | Picks | Conditioned Top 5 | Unconditioned Top 5 |
+| Group | Picks | Conditioned top 5 | Unconditioned top 5 |
 |---|---|---|---|
 | All picks | 4,500 | 74.4% | 62.9% |
 | Pick 1 | 900 | 82.8% | 78.3% |
 | Pick 5 | 900 | 59.2% | 43.9% |
 
-**Second-phase bans** on 2026+ games:
+Second-phase bans:
 
-| Group | Bans | Conditioned Leverage Top 8 | Unconditioned Top 8 |
+| Group | Bans | Conditioned leverage top 8 | Unconditioned top 8 |
 |---|---|---|---|
 | All games | 1,799 | 27.3% | 20.7% |
 | Games 2+ | 983 | 26.3% | 20.3% |
 
-**Limits:** The backtest ranks champions for the player who actually picked; during a real draft the board does not know which role a team fills next, so all open players' lists are shown.
+Limit: the backtest ranks champions for the player who actually picked; during a real draft the board does not know which role a team fills next, so all open players' lists are shown.
 
-**Series outlook** shows how much of each player's likely picks is already burned across the series, and what the coming game is expected to burn. A "what does a pick cost" search shows, per team, which players lose probability mass from a chosen champion and the combined figure. The panel also projects how much more each player's pool will shrink from the coming game.
+**Series outlook.** For each player: how much of their series-start likelihood list is already burned, and how much the coming game is expected to burn. "What does a pick cost?" shows, for a chosen champion, which players on each team lose it and the combined figure.
 
-**Series outlook backtest** on 2026+ games (players with 20+ earlier games):
+Backtest on 2026 games (players with 20 or more earlier games):
 
-| Game | Picks | Mean burned share | Pick outside top 10 |
+| Game | Picks | Mean burned share | Pick outside the series-start top 10 |
 |---|---|---|---|
 | 2 | 1,224 | 19.8% | 20.4% |
 | 3 | 731 | 36.8% | 29.7% |
 | 4 | 165 | 48.4% | 32.1% |
 | 5 | 66 | 63.8% | 51.5% |
 
-**Projection** of the coming game's burn (3,848 player-games): mean predicted 21.6%, mean actual 21.8%; mean absolute error 8.1 points against 8.8 for a constant. The burned share describes how much of a player's usual picks is gone; in this data it does not predict who wins.
+Projection of the coming game's burn (3,848 player-games): mean predicted 21.6%, mean actual 21.8%; mean absolute error 8.1 points against 8.8 for a constant.
 
-**Written note** shows a short pre-game summary at the top of the outlook panel. It is generated by a Gemini language model from the board's figures (burned champions, player pools, ban leverage) and checked before display: every champion name and percentage in the note must appear in the facts. The note restates the board's figures; it contains no judgement of its own. Notes are generated in the pipeline, not in the browser — the API key never reaches the app. Notes exist only where there is enough player history (at least eight of ten players with 20+ earlier games), so many early series have none.
-
-## Commands
-
-```bash
-pnpm data          # build aggregates from match data
-pnpm data:notes    # generate pre-game notes (requires GEMINI_API_KEY)
-pnpm dev           # start the app
-pnpm build         # production build
-pnpm test          # run tests
-pnpm typecheck     # type-check all packages
-pnpm lint          # lint the app
-pnpm check:data    # verify no data files are tracked
-```
+**Written note.** A short pre-game note for each team, in the side column. It is generated in the pipeline by a Gemini model from the board's own figures and checked before it is stored: every champion name and percentage must appear in the facts it was given, the headline must be a fact about a pool and not the score, and predictions of a winner are rejected. The note restates the board's figures and adds no judgement of its own. The API key never reaches the app. Notes exist only where there is enough player history, so early series have none.
 
 To generate notes, create a `.env` file in the project root:
 
@@ -150,25 +173,16 @@ GEMINI_API_KEY=your-key-here
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Then run `pnpm data:notes`. The command uses a paid Gemini project; prompts are not used to improve Google's products. Use `--limit N` to cap new API calls.
+Then run `pnpm data:notes`. Use `--limit N` to cap new API calls or `--series <id>` for one series.
 
-## Two builds
+## How it was built
 
-The data licence forbids redistributing the data or any derived dataset that "still contains or allows reconstruction" of it. So there are two builds:
+The project was built in WebStorm. Each feature started as a written brief in [`docs/`](docs/), which was run through Junie in JetBrains Air. Every run was then reviewed: type check, tests, lint, builds, WebStorm inspections, an independent recomputation of the reported numbers, and a click-through of the real page. Faults were fixed in the code or written back into the brief. The reviews, a number of fixes and the final redesign ([`docs/redesign.md`](docs/redesign.md)) were done with Claude Code working alongside the IDE.
 
-- **Full (local):** `pnpm data` writes every pick and ban of 1,737 games. The app computes game plans in the browser from `picks.json` and `model.json`. This build is for development and for judges who run the project against their own copy of the data. It must never be deployed.
-
-- **Demo (hosted):** `pnpm data:demo` selects 20 featured series, pre-computes their game plans, and writes a small data folder (`data-demo/`). No `picks.json`, no `model.json`. `pnpm build:demo` builds the app against this folder into `dist-demo/` and runs safety checks. Only `dist-demo` is ever deployed.
-
-```bash
-pnpm data          # build full aggregates from match data
-pnpm data:demo     # build demo data from the full output
-pnpm build         # production build (full)
-pnpm build:demo    # demo build (safe to deploy)
-```
-
-## Licence
+## Licence and notices
 
 MIT, see [LICENSE](LICENSE). The licence covers this code only, not the match data.
 
-League of Legends is a trademark of Riot Games, Inc. This project is not endorsed by Riot Games.
+Match data: GRID, provided for the Sky's The Limit 2026 hackathon.
+
+Champion icons are loaded from Riot's Data Dragon and are not part of this repository's code; the app has a names-only mode that loads none. Fearless Board isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.

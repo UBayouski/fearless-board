@@ -60,7 +60,7 @@ export interface NoteProblem {
 
 // ── Prompt ───────────────────────────────────────────────────────────
 
-export const NOTE_PROMPT_VERSION = 2
+export const NOTE_PROMPT_VERSION = 3
 
 export const NOTE_PROMPT = `You write a short pre-game note for the coach of one League of Legends team in a Fearless Draft series (a champion picked by either team in an earlier game is gone for both teams for the rest of the series).
 You get facts as JSON, computed by a planning board. "We" is the team in "team".
@@ -73,11 +73,11 @@ Rules:
 - Never write a field name from the JSON. Say it in words: "has lost 51% of his usual picks", "a 25% chance".
 - At most two players per point and at most five percentages in the whole note.
 - For a ban you may quote "gapPoints", the difference between the two chances, as "an 8-point gap" (never with a percent sign). Do not work out any other number yourself.
-- Do not predict who wins, and do not say that a team is favoured, ahead, or at an advantage or disadvantage. The score may be stated.
+- Do not predict who wins, and do not say that a team is favoured, ahead, or at an advantage or disadvantage. The score may be stated in a point, never in the headline.
 - Do not give reasons from game knowledge (matchups, synergy, meta strength).
 - Do not use "he", "his", "she" or "her" for a player; repeat the name or use "they".
 - Plain English, short sentences, no hype. If a list in the facts is empty, say so in a few words.
-Return JSON: { "headline": one sentence of at most 14 words naming the single most notable fact, "points": exactly three objects { "title", "text" } with titles "Their pools", "Our pools", "Bans and picks", each text at most 40 words }.
+Return JSON: { "headline": one sentence of at most 14 words naming the single most notable fact about a player's pool (for example who has lost the most of their usual picks); never the score, the game number or which team leads, "points": exactly three objects { "title", "text" } with titles "Their pools", "Our pools", "Bans and picks", each text at most 40 words }.
 `
 
 // ── Names helper ─────────────────────────────────────────────────────
@@ -318,6 +318,13 @@ export function checkNote(
         problems.push({ rule: 'missing_title', detail: `Note is missing the title "${expected}"` })
       }
     }
+  }
+
+  // 5b. The headline is a pool fact. The score is on the scoreboard directly above the note, so a
+  // headline that restates it ("Game 5 is tied at 2-2") tells the reader nothing.
+  const headline = note.headline.toLowerCase()
+  if (/\b\d\s?[-–:]\s?\d\b/u.test(headline) || /\b(?:tied|trails?|trailing|leads?|leading|score)\b/u.test(headline)) {
+    problems.push({ rule: 'headline_states_score', detail: `Headline is about the score, not a pool: "${note.headline}"` })
   }
 
   // 6. Forbidden words

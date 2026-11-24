@@ -372,3 +372,14 @@ details.more > summary, .rail details.fold > summary, .note summary, .gone-d sum
 @container (max-width: 150px) {
   .row > .tile img, .row > .tile.lead img, .row.table > .tile.actual img { display: none; }
 }
+
+/* The team that is not picking is toned down without losing text contrast: its icons are greyed and its
+   tiles lose their fill and bars, but every word keeps its normal colour. */
+.lane.dim { opacity: 1; }
+.lane.dim .tile { background: transparent; border-style: dashed; }
+.lane.dim .tile.lead { border-width: 1px; border-color: var(--line); }
+.lane.dim .tile img { filter: grayscale(1); opacity: .5; }
+.lane.dim .tile .lk { visibility: hidden; }
+
+/* A control that cannot act right now stays focusable, so the keyboard focus is never dropped */
+.ghost[aria-disabled='true'] { opacity: .45; cursor: default; }
