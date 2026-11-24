@@ -283,7 +283,7 @@ export function SeriesBoard({
           unavailable={unavailable}
           canReplay={realGameActions.length > 0}
           replayConfirm={replayConfirm}
-          onBan={championId => dispatch({ type: 'ban', championId })}
+          onBan={championId => { dispatch({ type: 'ban', championId }); focusUndo() }}
           onUndo={() => dispatch({ type: 'undo' })}
           onReset={() => dispatch({ type: 'reset' })}
           onFirstTeam={teamId => dispatch({ type: 'setFirstTeam', teamId })}

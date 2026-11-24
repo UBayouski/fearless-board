@@ -4,7 +4,7 @@ import { SeriesBoard } from './SeriesBoard'
 import { UiContext } from '../ui'
 import { renderToString } from './renderHtml'
 import type { GamePlan } from '@fearless-board/shared'
-import { board, championMap, decodedPlanFor, draft, planFor, playerMap, sessionAfter, teamMap } from './boardFixture'
+import { board, championMap, decodedPlanFor, draft, leveragePlanFor, planFor, playerMap, sessionAfter, teamMap } from './boardFixture'
 
 /** The page without the unrounded widths of the comfort bars (a style value, not text). */
 function visibleText(html: string): string {
@@ -180,14 +180,16 @@ describe('SeriesBoard: reveal', () => {
 describe('SeriesBoard: practice draft', () => {
   it('ban turn: the ban rows are buttons, and a filled slot keeps its label', async () => {
     const session = sessionAfter({ type: 'ban', championId: 'c1' })
-    const html = await renderToString(board({ selectedGame: 3, initialSession: session }))
+    const html = await renderToString(board({ selectedGame: 3, initialSession: session, planFor: leveragePlanFor }))
 
     expect(html).toContain('Practice draft')
     expect(html).toContain('Exit practice')
     expect(html).toMatch(/<span class="slot ban filled[^"]*"><small>ban<\/small><span class="v">Champion One<\/span>/u)
-    // Team B bans next: its rows in the side column enter the ban
+    // Team B bans next: its rows under "Bans to consider" enter the ban (deny rows below also use button.opt)
     expect(html).toContain('Team Beta to ban')
-    expect(html).toContain('<button type="button" class="opt"')
+    const bansSection = html.match(/<section><h3>Bans to consider<\/h3>[\s\S]*?<\/section>/u)?.[0] ?? ''
+    expect(bansSection).toContain('<button type="button" class="opt"')
+    expect(bansSection).toContain('Champion Eight')
     // No pick buttons on a ban turn
     expect(html).not.toContain(PICK_BUTTON)
   })

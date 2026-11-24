@@ -66,6 +66,18 @@ Stop here for review.
 
 Stop here for review.
 
+## 4. Two findings from the review of section 2
+
+The review of section 2 found one fault in the app and one test that does not check what its title says. This section fixes both. It is the only section that may change the app, and only in the one place named below.
+
+1. **Focus is lost after a ban chosen in the search box.** In `packages/app/src/components/SeriesBoard.tsx` the ban search in the draft strip (`DraftStrip`'s `onBan`) dispatches the ban but does not call `focusUndo()`, unlike the ban rows in the side column and the picks in the lanes. After the 6th or 10th ban the next turn is a pick, the search box disappears, and keyboard focus falls back to the page. Make the strip's ban move focus to Undo the same way. No other app change.
+   - Add a test to `packages/app/src/components/interaction.test.tsx`: from a session after five bans, type into the strip's search box (`.strip input`), choose the first result, wait one animation frame, and expect six filled slots and focus on `draft-undo`. Find how `ChampionSearch` shows and selects results by reading it; do not guess class names.
+2. **A test that passes for the wrong reason.** `SeriesBoard.test.tsx`, "ban turn: the ban rows are buttons, and a filled slot keeps its label", checks for `<button type="button" class="opt"`. With the shared fixture no ban stands out ("No ban stands out."), and the only such button is a "Picks that also deny" row, which shows a cost and does not ban. Make the test check a button inside the "Bans to consider" section. Use a plan in which a ban stands out: `interaction.test.tsx` builds one (`leveragePlanFor`, team Alpha's players also on Champion Eight); move it into `boardFixture.ts` and use it from both files, so it exists once.
+
+Rules as above, plus: show that the new focus test fails without the fix and passes with it, and that the tightened ban-row test fails when the "Bans to consider" rows are rendered as plain `div`s (in `Rail.tsx`, temporarily) while the deny rows stay buttons. Restore everything after each check.
+
+Stop here for review.
+
 ## Report
 
 For each section: the files added or changed, the number of new tests, the totals from `pnpm test`, how you checked that each new test can fail, and anything that looked wrong but was left alone under the rules above.

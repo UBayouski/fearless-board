@@ -6,8 +6,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { UiContext } from '../ui'
 import { ChampIcon } from './ChampIcon'
 import { SeriesPicker } from './SeriesPicker'
-import { gamePlan, type ChampionRef, type DraftEvent, type GamePlan, type SeriesIndexEntry } from '@fearless-board/shared'
-import { board, draft, model, pickRow, picks, playerRole, sessionAfter, teamMap } from './boardFixture'
+import { type ChampionRef, type DraftEvent, type SeriesIndexEntry } from '@fearless-board/shared'
+import { board, leveragePlanFor, sessionAfter, teamMap } from './boardFixture'
 
 // Tell React that updates are wrapped in act(), so it flushes them and does not warn
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -42,15 +42,6 @@ async function clickAndWaitFrame(element: Element) {
 const filledSlots = (container: Element) => container.querySelectorAll('#draft-order .slot.filled').length
 
 const iconMap = new Map<string, ChampionRef>([['c1', { id: 'c1', name: 'Champion One', icon: 'ChampOne.png' }]])
-
-// The shared fixture gives both teams the same pools, so no ban stands out. Here team Alpha's players also
-// played Champion Eight in twenty more games, so Team Beta gets a ban row for it.
-const alphaOnEight = [...picks]
-for (let g = 0; g < 20; g++) {
-  for (const playerId of ['p1', 'p2', 'p3', 'p4', 'p5']) alphaOnEight.push(pickRow(`2025-01-${String(g + 2).padStart(2, '0')}`, `e${g}`, 1, 'tA', playerId, 'c8', true))
-}
-const leveragePlans = new Map(draft.games.map(game => [game.gameNumber, gamePlan(draft, game.gameNumber, alphaOnEight, model, playerRole)]))
-const leveragePlanFor = (gameNumber: number): GamePlan | null => leveragePlans.get(gameNumber) ?? null
 
 // ── Tests ────────────────────────────────────────────────────────────
 
@@ -93,6 +84,27 @@ describe('Interaction: practice draft focus', () => {
     await clickAndWaitFrame(ban!)
 
     expect(filledSlots(container)).toBe(2)
+    expect(document.activeElement?.id).toBe('draft-undo')
+  })
+
+  it('a ban chosen in the strip search moves focus to Undo', async () => {
+    const container = await render(board({ selectedGame: 3, initialSession: sessionAfter(...sixBans().slice(0, 5)) }))
+    expect(filledSlots(container)).toBe(5)
+    const input = container.querySelector<HTMLInputElement>('.strip input')
+    expect(input).not.toBeNull()
+    input!.focus()
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Champion')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const firstResult = container.querySelector<HTMLElement>('.strip .champ-search-results button.champ-search-result')
+    expect(firstResult?.textContent).toBe('Champion Seven')
+
+    await clickAndWaitFrame(firstResult!)
+
+    expect(filledSlots(container)).toBe(6)
     expect(document.activeElement?.id).toBe('draft-undo')
   })
 

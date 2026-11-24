@@ -166,6 +166,17 @@ export const decodedPlanFor = (gameNumber: number): GamePlan | null => {
   return decodePlan(encoded)
 }
 
+// The base fixture gives both teams the same pools, so no ban stands out. Here team Alpha's players also
+// played Champion Eight in twenty more games, so Team Beta gets a ban row for it.
+const alphaOnEight = [...picks]
+for (let g = 0; g < 20; g++) {
+  for (const playerId of ['p1', 'p2', 'p3', 'p4', 'p5']) {
+    alphaOnEight.push(pickRow(`2025-01-${String(g + 2).padStart(2, '0')}`, `e${g}`, 1, 'tA', playerId, 'c8', true))
+  }
+}
+const leveragePlans = new Map(draft.games.map(game => [game.gameNumber, computeGamePlan(draft, game.gameNumber, alphaOnEight, model, playerRole)]))
+export const leveragePlanFor = (gameNumber: number): GamePlan | null => leveragePlans.get(gameNumber) ?? null
+
 /** The draft context of the fixture series in game 3: both lineups, with c5 burned in game 1. */
 export const draftContext = {
   teamIds: ['tA', 'tB'],
