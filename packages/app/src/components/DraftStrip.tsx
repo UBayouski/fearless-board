@@ -1,5 +1,6 @@
 import type { DraftSession, SeriesDraft } from '@fearless-board/shared'
 import { DRAFT_ORDER } from '@fearless-board/shared'
+import { useState } from 'react'
 import { useUi } from '../ui'
 import { ChampionSearch } from './ChampionSearch'
 
@@ -49,6 +50,8 @@ export function DraftStrip({
   onReplayNext: () => void
 }) {
   const { teamMap, championMap } = useUi()
+  // Phones show a compact bar; the slots and the less used controls open on demand
+  const [orderOpen, setOrderOpen] = useState(false)
   const name = (teamId: string) => teamMap.get(teamId)?.name ?? teamId
   const champion = (id: string) => championMap.get(id)?.name ?? id
   const { actions, firstTeamId } = session
@@ -69,11 +72,11 @@ export function DraftStrip({
   const detail = [
     inReplay ? 'Replay of the real draft.' : '',
     last ? `Last: ${name(last.teamId)} ${last.type === 'ban' ? 'banned' : 'picked'} ${champion(last.championId)}.` : '',
-    !slot || inReplay ? '' : type === 'ban' ? 'Choose a ban from the list on the right, or search.' : `Choose a champion in ${name(actingTeamId ?? '')}'s column.`,
+    !slot || inReplay ? '' : type === 'ban' ? 'Choose a ban from "Bans to consider", or search.' : `Choose a champion in ${name(actingTeamId ?? '')}'s column.`,
   ].filter(Boolean).join(' ')
 
   return (
-    <div className="strip">
+    <div className={`strip${orderOpen ? ' open' : ''}`}>
       <div className="turn" role="status">
         <strong>{status}</strong>
         <p>{detail}</p>
@@ -83,23 +86,26 @@ export function DraftStrip({
           <ChampionSearch placeholder="Search a champion to ban" unavailable={unavailable} championMap={championMap} onSelect={onBan} />
         )}
         {/* Not `disabled`: a button that disables itself under the keyboard would drop the focus */}
-        <button type="button" className="ghost" aria-disabled={!canUndo} onClick={() => canUndo && onUndo()}>Undo</button>
-        <button type="button" className="ghost" aria-disabled={!canReset} onClick={() => canReset && onReset()}>Reset</button>
+        <button id="draft-undo" type="button" className="ghost" aria-disabled={!canUndo} onClick={() => canUndo && onUndo()}>Undo</button>
+        <button type="button" className="ghost more" aria-disabled={!canReset} onClick={() => canReset && onReset()}>Reset</button>
         {inReplay ? (
           <button type="button" className="ghost" onClick={onReplayNext} disabled={session.replay!.remaining.length === 0}>
             {session.replay!.remaining.length > 0 ? 'Next action' : 'Replay complete'}
           </button>
         ) : canReplay && (
           <>
-            <button type="button" className="ghost" onClick={onReplay}>{replayConfirm ? 'Confirm replay' : 'Replay the real draft'}</button>
+            <button type="button" className="ghost more" onClick={onReplay}>{replayConfirm ? 'Confirm replay' : 'Replay the real draft'}</button>
             {replayConfirm && <span className="soft">This shows the actual picks of this game.</span>}
             {replayConfirm && <button type="button" className="ghost" onClick={onReplayCancel}>Cancel</button>}
           </>
         )}
-        <button type="button" className="ghost" onClick={onExit}>Exit practice</button>
-        <button type="button" className="ghost" onClick={onReveal}>Reveal game {gameNumber}</button>
+        <button type="button" className="ghost order-toggle" aria-expanded={orderOpen} aria-controls="draft-order" onClick={() => setOrderOpen(open => !open)}>
+          {orderOpen ? 'Less' : `Draft order, ${actions.length} of ${DRAFT_ORDER.length}`}
+        </button>
+        <button type="button" className="ghost more" onClick={onExit}>Exit practice</button>
+        <button type="button" className="ghost more" onClick={onReveal}>Reveal game {gameNumber}</button>
         {actions.length === 0 && !inReplay && (
-          <div className="seg" role="group" aria-label="Team that acts first">
+          <div className="seg more" role="group" aria-label="Team that acts first">
             {draft.teamIds.map(teamId => (
               <button key={teamId} type="button" aria-pressed={teamId === firstTeamId} onClick={() => onFirstTeam(teamId)}>
                 {name(teamId)} first
@@ -108,6 +114,7 @@ export function DraftStrip({
           </div>
         )}
       </div>
+      <div id="draft-order" className="order">
       {draft.teamIds.map((teamId) => {
         const slots = DRAFT_ORDER.map((entry, index) => ({ entry, index })).filter(({ entry }) => teamOfSide(entry[0]) === teamId)
         return (
@@ -129,6 +136,7 @@ export function DraftStrip({
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

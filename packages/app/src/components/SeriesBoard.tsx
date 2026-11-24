@@ -221,6 +221,8 @@ export function SeriesBoard({
   const changedLineups = draft.teamIds.filter(teamId => plan.lineupChanged.get(teamId))
   const share = (player: GamePlanPlayer) => burnedShares.get(player.playerId) ?? 0
 
+  // A pick or a ban removes the control that was used, so the focus goes to Undo instead of the page
+  const focusUndo = () => requestAnimationFrame(() => document.getElementById('draft-undo')?.focus())
   const exitDraft = () => {
     setDraftMode(false)
     dispatch({ type: 'reset' })
@@ -364,7 +366,7 @@ export function SeriesBoard({
                 replayRank={session.replay ? replayPickRanks.get(player.playerId) : undefined}
                 removed={removedForPlayers.has(player.playerId) ? lastRemoved : undefined}
                 unavailable={unavailable}
-                onPick={championId => dispatch({ type: 'pick', playerId: player.playerId, championId })}
+                onPick={championId => { dispatch({ type: 'pick', playerId: player.playerId, championId }); focusUndo() }}
               />
             ) : (
               <PlanningLane player={player} side={side} burnedShare={share(player)} burnedByGame={plan.burnedByGame} />
@@ -380,7 +382,7 @@ export function SeriesBoard({
             note={notesData?.games[String(gameNumber)]?.[railTeam]}
             noteModel={notesData?.model}
             banTurn={banTurn}
-            onBan={championId => dispatch({ type: 'ban', championId })}
+            onBan={championId => { dispatch({ type: 'ban', championId }); focusUndo() }}
             costChampion={costChampion}
             onCostChampion={setCostChampion}
             unavailable={unavailable}

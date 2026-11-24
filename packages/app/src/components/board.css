@@ -75,6 +75,8 @@ button:focus-visible, summary:focus-visible, h2:focus-visible { outline: 3px sol
 .slot.pick.filled { background: var(--surface); color: var(--ink); border-color: var(--ink); } .slot.pick.filled .v { font-weight: 700; }
 .slot.current { outline: 2px solid var(--ember); outline-offset: -1px; color: var(--ink); }
 .slot.gapbefore { margin-left: 12px; }
+/* The toggle for the slots exists on phones only (see the 760 px block) */
+.order-toggle { display: none; }
 
 /* Board and rail */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
@@ -225,7 +227,11 @@ details.more p b { color: var(--ink); }
   .wrap { padding: 0 12px 32px; }
   .actions .primary { flex: 1 1 100%; order: 3; }
   .counts div { display: block; padding: 8px 10px; font-size: 13px; } .counts strong { display: block; font-size: 30px; }
-  .strip { position: static; } .slotrow { align-items: flex-start; } .slotrow b { width: 58px; font-size: 12px; text-align: left; padding-top: 5px; } .slot { width: 62px; padding: 0 4px; font-size: 11px; } .slot.gapbefore { margin-left: 0; }
+  .strip { padding: 8px 10px; } .turn { gap: 6px 10px; margin-bottom: 0; } .turn strong { font-size: 20px; } .turn p { font-size: 13px; min-width: 0; flex-basis: 100%; }
+  .strip:not(.open) .order, .strip:not(.open) .more { display: none; } .strip.open .order { margin-top: 8px; }
+  .strip .champ-search { flex: 1 1 150px; }
+  .slotrow { align-items: flex-start; } .slotrow b { width: 58px; font-size: 12px; text-align: left; padding-top: 5px; } .slot { width: 62px; padding: 0 4px; font-size: 11px; } .slot.gapbefore { margin-left: 0; }
+  .order-toggle { display: inline-flex; align-items: center; }
   .roles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; margin-bottom: 6px; }
   .roles button { background: transparent; border: 1px solid var(--line); border-radius: 4px; min-height: 44px; padding: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: capitalize; }
   .roles button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
@@ -383,3 +389,8 @@ details.more > summary, .rail details.fold > summary, .note summary, .gone-d sum
 
 /* A control that cannot act right now stays focusable, so the keyboard focus is never dropped */
 .ghost[aria-disabled='true'] { opacity: .45; cursor: default; }
+
+/* An icon that could not be loaded is replaced by the champion's name (see ChampIcon) */
+.icon-fallback { display: block; font-size: 11.5px; line-height: 1.2; overflow-wrap: anywhere; }
+.mini li:has(.icon-fallback) { width: auto; min-width: 46px; border-color: var(--line); background: var(--bg); }
+.mini .icon-fallback { padding: 2px 2px 3px; color: var(--ink); }

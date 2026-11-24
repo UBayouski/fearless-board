@@ -204,6 +204,11 @@ did not trigger, and it is off under `prefers-reduced-motion`.
   tiles lose their fill and bars, and the text keeps its colour. Keyboard-only run with real key presses: tab order,
   focus ring, Enter and Space on every control, the champion search (arrow, Enter, Escape) and the series list all
   work. Undo and Reset use `aria-disabled` so the focus is not dropped when they can no longer act.
+- **From an outside review (2026-11-23):** on phones the practice-draft strip is a compact sticky bar (turn, last action,
+  search on a ban turn, Undo, and "Draft order, n of 20", which opens the slots and the other controls): 126 px after
+  the first pick at 390 px, was 457 px and not sticky. A pick or a ban from a list moves the focus to Undo, because the
+  control that was used disappears. An icon that cannot be loaded is replaced by the champion's name where the icon
+  stands in for the name (burn track, forecast strip).
 - **Not done yet:** a screen-reader pass.
 
 ## Build steps
