@@ -1,9 +1,9 @@
-// Tests for selectFeatured
+// Tests for selectFeatured (the featured series: marked in the series list, and the demo build)
 
 import { describe, it } from 'node:test'
 import { strict as assert } from 'node:assert'
 import { selectFeatured } from './featured.ts'
-import type { SeriesIndexEntry, PickRow } from '@fearless-board/shared'
+import type { SeriesIndexEntry, PickRow } from './types.ts'
 
 describe('selectFeatured', () => {
   // Build a small fixture: 3 series, picks for each

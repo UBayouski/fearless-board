@@ -40,3 +40,5 @@ packages/app/public/data-demo/
 
 # Demo build output
 dist-demo
+dist-site
+.firebase/

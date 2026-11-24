@@ -10,9 +10,12 @@ export function ChampIcon({ id, named = false }: { id: string; named?: boolean }
   const { championMap, icons, ddragon } = useUi()
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const champion = championMap.get(id)
-  if (!icons || !ddragon || !champion?.icon) return null
+  if (!icons || !ddragon) return null
+  // No icon known for this champion, or it failed to load: write the name where the icon stood in for it
+  const fallback = named ? <span className="icon-fallback">{champion?.name ?? id}</span> : null
+  if (!champion?.icon) return fallback
   const src = `https://ddragon.leagueoflegends.com/cdn/${ddragon}/img/champion/${champion.icon}`
-  if (failedSrc === src) return named ? <span className="icon-fallback">{champion.name}</span> : null
+  if (failedSrc === src) return fallback
   return <img src={src} alt={named ? champion.name : ''} loading="lazy" onError={() => setFailedSrc(src)} />
 }
 

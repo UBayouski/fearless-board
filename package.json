@@ -13,6 +13,7 @@
     "dev": "pnpm --filter @fearless-board/app dev",
     "build": "pnpm --filter @fearless-board/app build",
     "build:demo": "pnpm --filter @fearless-board/app exec vite build --mode demo && node scripts/clean-demo.mjs && node scripts/check-demo.mjs",
+    "build:site": "pnpm --filter @fearless-board/app exec vite build --mode site && node scripts/clean-site.mjs && node scripts/check-site.mjs",
     "data": "pnpm --filter @fearless-board/pipeline start",
     "data:notes": "node packages/pipeline/src/notes.ts",
     "data:demo": "node packages/pipeline/src/demo.ts",

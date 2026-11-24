@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PickModel, SeriesDraft, WrittenNote } from '@fearless-board/shared'
+import { selectFeatured } from '@fearless-board/shared'
 import type { Load, SeriesWithPlans } from './data'
 import { buildPlanFor, dataUrl, loadAll, loadSeries } from './data'
 import { parseHash, setHash } from './route'
@@ -167,6 +168,14 @@ function App() {
   // so choosing another game of the same series keeps the board.
   const seriesDraft: SeriesDraft | null = seriesWithPlans?.seriesId === selectedSeries ? seriesWithPlans : null
 
+  // The featured series: four or more games, all ten players with 20+ earlier series, newest first.
+  // The demo build holds only these; the full build marks them in the series list.
+  const featured = useMemo(() => {
+    if (load.state !== 'ready') return []
+    return load.mode === 'demo' ? load.index : selectFeatured(load.index, load.picks)
+  }, [load])
+  const featuredIds = useMemo(() => new Set(featured.map((e) => e.seriesId)), [featured])
+
   const planFor = useMemo(
     () => buildPlanFor(load, loadedModel, seriesDraft, seriesWithPlans),
     [load, loadedModel, seriesDraft, seriesWithPlans],
@@ -182,53 +191,12 @@ function App() {
         setSeriesError(null)
       } else {
         if (load.state === 'ready') {
-          // 3: Demo mode — open on first entry of series-index.json, game 3
-          if (load.mode === 'demo') {
-            // The newest series that went to five games, as in the full build; else the newest
-            const first = load.index.find((e) => e.gameCount === 5) ?? load.index[0]
-            if (first) {
-              const defaultGame = first.gameCount
-              setHash(first.seriesId, defaultGame)
-              setSelectedSeries(first.seriesId)
-              setSelectedGame(defaultGame)
-              setSeriesError(null)
-              return
-            }
-          }
-          // 7: Full mode — default to most recent best-of-five where all 10 players have 20+ earlier games
-          const bo5s = load.index
-            .filter((e) => e.gameCount === 5)
-            .sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart))
-          let bestSeries: typeof bo5s[0] | null = null
-          for (const entry of bo5s) {
-            const playerIds = new Set<string>()
-            for (const p of load.picks) {
-              if (p.seriesId === entry.seriesId) {
-                playerIds.add(p.playerId)
-              }
-            }
-            if (playerIds.size < 10) continue
-            let allHave20 = true
-            for (const pid of playerIds) {
-              const priorSeries = new Set(
-                load.picks
-                  .filter((p) => p.playerId === pid && p.scheduledStart < entry.scheduledStart)
-                  .map((p) => p.seriesId),
-              )
-              if (priorSeries.size < 20) {
-                allHave20 = false
-                break
-              }
-            }
-            if (allHave20) {
-              bestSeries = entry
-              break
-            }
-          }
-          if (bestSeries) {
-            setHash(bestSeries.seriesId, bestSeries.gameCount)
-            setSelectedSeries(bestSeries.seriesId)
-            setSelectedGame(bestSeries.gameCount)
+          // Default: the newest featured series that went to five games, on its last game; else the newest featured
+          const first = featured.find((e) => e.gameCount === 5) ?? featured[0]
+          if (first) {
+            setHash(first.seriesId, first.gameCount)
+            setSelectedSeries(first.seriesId)
+            setSelectedGame(first.gameCount)
             setSeriesError(null)
             return
           }
@@ -241,7 +209,7 @@ function App() {
     handleHash()
     window.addEventListener('hashchange', handleHash)
     return () => window.removeEventListener('hashchange', handleHash)
-  }, [load])
+  }, [load, featured])
 
   const loadSeriesCallback = useCallback(
     (seriesId: string) => {
@@ -316,6 +284,7 @@ function App() {
                 )}
                 <SeriesPicker
                   index={load.index}
+                  featuredIds={featuredIds}
                   teamMap={load.teamMap}
                   selectedId={selectedSeries}
                   onSelect={loadSeriesCallback}

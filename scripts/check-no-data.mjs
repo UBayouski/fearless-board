@@ -2,7 +2,7 @@
 // Run before every commit and push: `pnpm check:data`.
 import { execFileSync } from 'node:child_process'
 
-const forbidden = /\.(zst|jsonl|parquet|sqlite|duckdb)$|stl-hackathon-2026-grid-starter|(^|\/)public\/data(\/|-demo\/)/i
+const forbidden = /\.(zst|jsonl|parquet|sqlite|duckdb)$|stl-hackathon-2026-grid-starter|(^|\/)public\/data(\/|-demo\/)|(^|\/)dist(-demo|-site)?\//i
 
 const list = (args) => execFileSync('git', args, { encoding: 'utf8' }).split('\n').filter(Boolean)
 

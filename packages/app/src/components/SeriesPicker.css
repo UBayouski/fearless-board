@@ -61,3 +61,11 @@
   color: var(--muted);
   display: block;
 }
+
+/* Featured or all series */
+.picker-scope { margin-bottom: 0.5rem; }
+.picker-scope .seg { display: flex; }
+.picker-scope .seg button { flex: 1; min-height: 44px; }
+.picker-scope .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.picker-scope p { margin: 0.35rem 0 0; font-size: 0.75rem; color: var(--muted); }
+.series-featured { margin-left: 0.5rem; font-size: 0.7rem; font-weight: 600; color: var(--ember); border: 1px solid currentColor; border-radius: 3px; padding: 0 0.3rem; vertical-align: 1px; }

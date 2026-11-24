@@ -9,7 +9,7 @@ import type {
   PickRow, Role, EncodedPlan,
 } from '@fearless-board/shared'
 import { gamePlan, decodeCompactPicks, encodePlan } from '@fearless-board/shared'
-import { selectFeatured } from './featured.ts'
+import { selectFeatured } from '@fearless-board/shared'
 
 const start = performance.now()
 

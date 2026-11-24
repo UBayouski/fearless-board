@@ -1,6 +1,6 @@
-// Selects the featured series for the demo build.
+// Selects the featured series: marked in the app's series list, and the only series of the demo build.
 
-import type { SeriesIndexEntry, PickRow } from '@fearless-board/shared'
+import type { SeriesIndexEntry, PickRow } from './types.ts'
 
 /**
  * Select featured series from the series index and pick rows.

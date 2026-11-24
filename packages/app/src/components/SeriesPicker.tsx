@@ -4,16 +4,22 @@ import './SeriesPicker.css'
 
 export function SeriesPicker({
   index,
+  featuredIds,
   teamMap,
   selectedId,
   onSelect,
 }: {
   index: SeriesIndexEntry[]
+  /** Series with enough player history for the forecasts and a written note; shown first and marked. */
+  featuredIds: Set<string>
   teamMap: Map<string, TeamRef>
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
   const [filter, setFilter] = useState('')
+  // Featured first: all series only when asked for, or when the selected series is not featured
+  const [showAll, setShowAll] = useState(() => selectedId !== null && !featuredIds.has(selectedId))
+  const allFeatured = index.every((e) => featuredIds.has(e.seriesId))
   const [teamFilter, setTeamFilter] = useState('')
 
   const teamIds = useMemo(() => {
@@ -36,6 +42,7 @@ export function SeriesPicker({
   const filtered = useMemo(() => {
     return index.filter((e) => {
       if (e.gameCount < 2) return false
+      if (!showAll && !featuredIds.has(e.seriesId)) return false
       if (filter) {
         const query = filter.toLowerCase()
         const t0 = teamMap.get(e.teamIds[0])
@@ -45,11 +52,21 @@ export function SeriesPicker({
       }
       if (teamFilter && !e.teamIds.includes(teamFilter)) return false
       return !eventFilter || e.event === eventFilter
-    })
-  }, [index, filter, teamFilter, eventFilter, teamMap])
+    }).sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart)) // newest first
+  }, [index, filter, teamFilter, eventFilter, teamMap, showAll, featuredIds])
+  const shownTotal = index.filter((e) => e.gameCount >= 2).length
 
   return (
     <div className="series-picker">
+      {!allFeatured && (
+        <div className="picker-scope">
+          <div className="seg" role="group" aria-label="Series shown">
+            <button type="button" aria-pressed={!showAll} onClick={() => setShowAll(false)}>Featured {featuredIds.size}</button>
+            <button type="button" aria-pressed={showAll} onClick={() => setShowAll(true)}>All {shownTotal}</button>
+          </div>
+          <p>Featured: four or more games, every player with 20 or more earlier series, and a written note before each game. All: every series of two or more games; single games are left out, since nothing carries over.</p>
+        </div>
+      )}
       <div className="picker-controls">
         <input
           type="text"
@@ -82,7 +99,10 @@ export function SeriesPicker({
                 aria-current={selectedId === e.seriesId ? 'true' : undefined}
                 onClick={() => onSelect(e.seriesId)}
               >
-                <span className="series-teams">{label}</span>
+                <span className="series-teams">
+                  {label}
+                  {showAll && !allFeatured && featuredIds.has(e.seriesId) && <span className="series-featured">Featured</span>}
+                </span>
                 <span className="series-meta">
                   {e.event} · {e.stage} · {e.gameCount} game{e.gameCount > 1 ? 's' : ''} · {new Date(e.scheduledStart).toLocaleDateString()}
                 </span>

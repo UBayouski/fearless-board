@@ -4,6 +4,8 @@ A draft desk for League of Legends series played under Fearless Draft, where a c
 
 Built for the Cloud9 x JetBrains "Sky's The Limit" hackathon 2026, Category 2 (League of Legends).
 
+**Try it:** https://fearless-board.web.app
+
 ![Planning view: the series so far, and each player's five likeliest picks](docs/img/planning.png)
 
 ## What it does
@@ -48,9 +50,10 @@ Other commands:
 pnpm test          # unit tests and render tests
 pnpm typecheck     # type-check all packages
 pnpm lint          # lint the app
-pnpm build         # production build (full, local only)
-pnpm data:demo     # build the demo data from the full output
-pnpm build:demo    # demo build, the only one that may be hosted
+pnpm build         # local build
+pnpm build:site    # hosted build: all series, cleaned and checked
+pnpm data:demo     # build the 20-series demo data from the full output
+pnpm build:demo    # 20-series demo build
 pnpm data:notes    # generate pre-game notes (needs a Gemini API key)
 pnpm check:data    # verify that no data file is tracked or staged
 ```
@@ -77,14 +80,22 @@ Then run `pnpm data`. To use a different location, set `STL_DATA_DIR` to the dat
 
 `pnpm data` writes to `packages/app/public/data/`, which is ignored by git. Run `pnpm check:data` before every commit and push; it fails if any data file is tracked or staged.
 
-## Two builds
+## Builds
 
-The data licence forbids redistributing the data or any derived dataset that "still contains or allows reconstruction" of it. So there are two builds:
+The organisers confirmed that the draft records may be shown publicly, all series and every pick and ban included. The match data itself (match files, extracts, databases) never goes into this repository or onto the site.
 
-- **Full (local):** `pnpm data` writes every pick and ban of 1,737 games, and the app computes each game's plan in the browser. This build is for development and for judges who run the project against their own copy of the data. It must never be deployed.
-- **Demo (hosted):** `pnpm data:demo` selects 20 featured series by rule (at least four games played, all ten players with 20 or more earlier series, newest first) and stores their plans as finished statistics: names, counts and percentages. It contains no pick rows and no model file. `pnpm build:demo` builds the app against this folder into `dist-demo/` and fails unless that folder passes its checks. Only `dist-demo` is ever deployed.
+- **Site (hosted):** `pnpm build:site` builds the app against the full output of `pnpm data` into `dist-site/`: all 744 series, drafts only (picks, bans, order, sides, winners, derived roles), the compact pick table and the model's four weights. Plans are computed in the browser. `scripts/clean-site.mjs` drops the demo folder, leftover files and notes written with an older prompt; `scripts/check-site.mjs` fails the build unless only the app and those data files are left and no key appears in the bundle. Firebase Hosting serves this folder (`firebase.json`).
+- **Full (local):** `pnpm build`, the same app against the same data, for development.
+- **Demo:** `pnpm data:demo` and `pnpm build:demo` write a 20-series build with plans precomputed (`dist-demo/`). It was the hosting plan before the organisers' answer and is kept as a small offline copy.
 
-The board looks and behaves the same in both builds for a featured series; a test compares a stored plan with a computed one.
+The 20 **featured** series (at least four games, all ten players with 20 or more earlier series, newest first) open first in the series list and are the ones with a written note before each game; the list switches to all series.
+
+```bash
+pnpm data          # build the aggregates from the match data
+pnpm build:site    # hosted build, cleaned and checked
+pnpm build         # local build
+pnpm data:demo && pnpm build:demo   # 20-series demo build
+```
 
 ## Layout
 
