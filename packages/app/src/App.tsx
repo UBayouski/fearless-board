@@ -6,6 +6,7 @@ import { buildPlanFor, dataUrl, loadAll, loadSeries } from './data'
 import { parseHash, setHash } from './route'
 import { SeriesPicker } from './components/SeriesPicker'
 import { SeriesBoard } from './components/SeriesBoard'
+import { HeaderSwitches } from './components/HeaderSwitches'
 import { UiContext } from './ui'
 import './index.css'
 
@@ -293,14 +294,7 @@ function App() {
             )}
           </div>
           <div className="grow" />
-          <div className="seg" role="group" aria-label="Champion icons">
-            <button type="button" aria-pressed={icons} onClick={() => chooseIcons(true)}>Icons</button>
-            <button type="button" aria-pressed={!icons} onClick={() => chooseIcons(false)}>Names only</button>
-          </div>
-          <div className="seg" role="group" aria-label="Theme">
-            <button type="button" aria-pressed={theme === 'light'} onClick={() => chooseTheme('light')}>Light</button>
-            <button type="button" aria-pressed={theme === 'dark'} onClick={() => chooseTheme('dark')}>Dark</button>
-          </div>
+          <HeaderSwitches icons={icons} theme={theme} onIcons={chooseIcons} onTheme={chooseTheme} />
         </div>
 
         {selectedSeries && seriesDraft ? (

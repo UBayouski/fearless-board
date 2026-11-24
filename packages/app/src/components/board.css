@@ -18,6 +18,8 @@ button:focus-visible, summary:focus-visible, h2:focus-visible { outline: 3px sol
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .seg button { background: transparent; border: 0; padding: 0 12px; min-height: 38px; font-size: 14px; color: var(--muted); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.header-switch button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 44px; min-height: 44px; white-space: nowrap; }
+.header-switch button svg { display: block; width: 20px; height: 20px; flex: none; }
 
 /* Shared matchup header */
 .score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; gap: clamp(10px, 2.5vw, 28px); padding: 6px 0 2px; }
@@ -225,6 +227,7 @@ details.more p b { color: var(--ink); }
 /* Phone: one role at a time, both players visible, one full-name row per prediction */
 @media (max-width: 760px) {
   .wrap { padding: 0 12px 32px; }
+  .header-switch .switch-word { display: none; }
   .actions .primary { flex: 1 1 100%; order: 3; }
   .counts div { display: block; padding: 8px 10px; font-size: 13px; } .counts strong { display: block; font-size: 30px; }
   .strip { padding: 8px 10px; } .turn { gap: 6px 10px; margin-bottom: 0; } .turn strong { font-size: 20px; } .turn p { font-size: 13px; min-width: 0; flex-basis: 100%; }

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 // Behaviour that only happens in a live page: an image that fails to load, focus that moves after a click, toggles.
-import { afterEach, describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { UiContext } from '../ui'
 import { ChampIcon } from './ChampIcon'
 import { SeriesPicker } from './SeriesPicker'
+import { HeaderSwitches } from './HeaderSwitches'
 import { type ChampionRef, type DraftEvent, type SeriesIndexEntry } from '@fearless-board/shared'
 import { board, leveragePlanFor, sessionAfter, teamMap } from './boardFixture'
 
@@ -44,6 +45,60 @@ const filledSlots = (container: Element) => container.querySelectorAll('#draft-o
 const iconMap = new Map<string, ChampionRef>([['c1', { id: 'c1', name: 'Champion One', icon: 'ChampOne.png' }]])
 
 // ── Tests ────────────────────────────────────────────────────────────
+
+describe('Interaction: HeaderSwitches', () => {
+  it('gives each option an accessible name and hides its icon from assistive technology', async () => {
+    const container = await render(
+      React.createElement(HeaderSwitches, { icons: true, theme: 'light', onIcons: () => {}, onTheme: () => {} }),
+    )
+    const expected = ['Champion icons', 'Names only', 'Light theme', 'Dark theme']
+
+    for (const name of expected) {
+      const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)
+      expect(button).not.toBeNull()
+      expect(button!.getAttribute('title')).toBe(name)
+      expect(button!.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+      expect(button!.querySelector('svg')?.getAttribute('focusable')).toBe('false')
+    }
+
+    // Both groups are there, each with its own name, and each has exactly one pressed option
+    const groups = [...container.querySelectorAll('[role="group"]')]
+    expect(groups.map(group => group.getAttribute('aria-label'))).toEqual(['Champion icons', 'Theme'])
+    for (const group of groups) {
+      expect(group.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(1)
+    }
+  })
+
+  it('updates the pressed options and reports each selected value', async () => {
+    const onTheme = vi.fn()
+    const onIcons = vi.fn()
+    function StatefulSwitches() {
+      const [theme, setTheme] = React.useState<'light' | 'dark'>('light')
+      const [icons, setIcons] = React.useState(true)
+      return React.createElement(HeaderSwitches, {
+        icons,
+        theme,
+        onIcons: value => { setIcons(value); onIcons(value) },
+        onTheme: value => { setTheme(value); onTheme(value) },
+      })
+    }
+    const container = await render(React.createElement(StatefulSwitches))
+    const dark = container.querySelector<HTMLButtonElement>('button[aria-label="Dark theme"]')!
+    const names = container.querySelector<HTMLButtonElement>('button[aria-label="Names only"]')!
+
+    await act(async () => { dark.click() })
+
+    expect(onTheme).toHaveBeenCalledWith('dark')
+    expect(dark.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('button[aria-label="Light theme"]')?.getAttribute('aria-pressed')).toBe('false')
+
+    await act(async () => { names.click() })
+
+    expect(onIcons).toHaveBeenCalledWith(false)
+    expect(names.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('button[aria-label="Champion icons"]')?.getAttribute('aria-pressed')).toBe('false')
+  })
+})
 
 describe('Interaction: ChampIcon', () => {
   it('icon fails to load: the name takes its place', async () => {
