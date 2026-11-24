@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 
-const site = resolve('packages/app/dist-site')
+const site = resolve(process.argv[2] ?? 'packages/app/dist-site')
 if (!existsSync(site)) {
   console.error(`Error: ${site} does not exist. Run pnpm build:site first.`)
   process.exit(1)
@@ -33,8 +33,11 @@ walk(site)
 for (const f of files) if (!allowed.some((re) => re.test(f))) fail(`unexpected file ${f}`)
 
 const index = JSON.parse(readFileSync(resolve(site, 'data/series-index.json'), 'utf8'))
-const seriesFiles = files.filter((f) => /^data\/\d+\.json$/.test(f))
-if (seriesFiles.length !== index.length) fail(`${seriesFiles.length} series files but ${index.length} entries in the index`)
+// One file per series in the index, and no series file that the index does not list
+const seriesFiles = new Set(files.filter((f) => /^data\/\d+\.json$/.test(f)))
+const indexedFiles = new Set(index.map((e) => `data/${e.seriesId}.json`))
+for (const f of indexedFiles) if (!seriesFiles.has(f)) fail(`${f} is missing for a series in the index`)
+for (const f of seriesFiles) if (!indexedFiles.has(f)) fail(`${f} is not in the series index`)
 
 // No secret may end up in the bundle
 for (const f of files.filter((name) => name.endsWith('.js'))) {
@@ -48,7 +51,7 @@ let noteCount = 0
 for (const f of files.filter((name) => name.startsWith('data/notes/'))) {
   for (const game of Object.values(JSON.parse(readFileSync(resolve(site, f), 'utf8')).games)) noteCount += Object.keys(game).length
 }
-if ((manifest.notes?.count ?? 0) !== noteCount) fail(`manifest says ${manifest.notes?.count ?? 0} notes, the site has ${noteCount}`)
+if ((manifest.notes?.count ?? 0) !== noteCount) fail(`data/manifest.json says ${manifest.notes?.count ?? 0} notes, the site has ${noteCount}`)
 
 const size = files.reduce((sum, f) => sum + statSync(resolve(site, f)).size, 0)
 if (errors > 0) {

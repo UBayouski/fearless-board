@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const site = resolve('packages/app/dist-site')
+const site = resolve(process.argv[2] ?? 'packages/app/dist-site')
 if (!existsSync(site)) {
   console.error(`Error: ${site} does not exist.`)
   process.exit(1)
